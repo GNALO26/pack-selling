@@ -1,10 +1,10 @@
-const FedaPay    = require('fedapay');
-const Pack       = require('../models/Pack');
+// ✅ Import correct pour fedapay v1.x — déstructuration obligatoire
+const { FedaPay, Transaction: FedaTransaction } = require('fedapay');
+const Pack        = require('../models/Pack');
 const Transaction = require('../models/Transaction');
 
 // ── Init FedaPay ──────────────────────────────────────────────────────────────
-// FEDAPAY_ENV=live   → paiement réel
-// FEDAPAY_ENV=sandbox → paiement test
+
 FedaPay.setApiKey(process.env.FEDAPAY_SECRET_KEY);
 FedaPay.setEnvironment(process.env.FEDAPAY_ENV || 'live');
 
@@ -38,7 +38,7 @@ exports.initiatePayment = async (req, res, next) => {
     }
 
     // ── Créer la transaction FedaPay ──────────────────────────────────────────
-    const transaction = await FedaPay.Transaction.create({
+    const transaction = await FedaTransaction.create({
       description: `Achat — ${pack.name}`,
       amount:      pack.price,
       currency:    { iso: pack.currency },
