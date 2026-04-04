@@ -15,7 +15,6 @@ const transactionSchema = new mongoose.Schema({
   fedapayTransactionId: {
     type: String,
     required: true,
-    unique: true,
   },
   amount: {
     type: Number,

@@ -14,7 +14,6 @@ const viewTokenSchema = new mongoose.Schema({
   token: {
     type: String,
     required: true,
-    unique: true,
     default: () => uuidv4() + '-' + uuidv4(), // ~72 caractères aléatoires
   },
   userId: {
