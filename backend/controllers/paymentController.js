@@ -5,7 +5,6 @@ const Transaction = require('../models/Transaction');
 // Init FedaPay
 FedaPay.setApiKey(process.env.FEDAPAY_SECRET_KEY);
 FedaPay.setEnvironment(process.env.FEDAPAY_ENV || 'live');
-console.log('[Fedapay] Mode : ${process.env.FEDAPAY || 'live'}');
 /**
  * POST /api/payment/initiate
  * Crée une transaction FedaPay et retourne le checkout URL.
