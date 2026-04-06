@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { motion } from 'framer-motion';
 import { CheckCircle, XCircle, Loader2 } from 'lucide-react';
@@ -7,22 +7,22 @@ import Link from 'next/link';
 import { authApi } from '@/lib/api';
 import { useAuthStore } from '@/lib/store';
 
-export default function VerifyEmailPage() {
+// ── Composant interne qui utilise useSearchParams ─────────────────────────────
+function VerifyContent() {
   const router       = useRouter();
   const params       = useSearchParams();
   const setAuth      = useAuthStore(s => s.setAuth);
-  const [status, setStatus] = useState<'loading' | 'success' | 'error'>('loading');
+  const [status, setStatus]   = useState<'loading' | 'success' | 'error'>('loading');
   const [message, setMessage] = useState('');
 
   useEffect(() => {
     const token = params.get('token');
-    if (!token) { setStatus('error'); setMessage('Token manquant.'); return; }
+    if (!token) { setStatus('error'); setMessage('Token manquant dans l\'URL.'); return; }
 
     authApi.verifyEmail(token)
       .then(res => {
         setAuth(res.data.user, res.data.token);
         setStatus('success');
-        // Redirection automatique après 2s
         setTimeout(() => router.push('/dashboard'), 2000);
       })
       .catch(err => {
@@ -48,7 +48,9 @@ export default function VerifyEmailPage() {
             </div>
             <h1 className="text-2xl font-display font-bold text-white mb-3">Email vérifié !</h1>
             <p className="text-white/60 mb-6">Votre compte est activé. Redirection vers votre tableau de bord...</p>
-            <Link href="/dashboard" className="btn-gold w-full justify-center">Accéder au tableau de bord</Link>
+            <Link href="/dashboard" className="btn-gold w-full justify-center">
+              Accéder au tableau de bord
+            </Link>
           </>
         )}
         {status === 'error' && (
@@ -60,11 +62,29 @@ export default function VerifyEmailPage() {
             <p className="text-white/60 mb-6">{message}</p>
             <div className="space-y-3">
               <Link href="/login" className="btn-gold w-full justify-center">Se connecter</Link>
-              <Link href="/register" className="btn-ghost text-white/60 w-full justify-center">Créer un nouveau compte</Link>
+              <Link href="/register" className="btn-ghost text-white/60 w-full justify-center">
+                Créer un nouveau compte
+              </Link>
             </div>
           </>
         )}
       </div>
     </motion.div>
+  );
+}
+
+// ── Page principale avec Suspense obligatoire (Next.js 14) ────────────────────
+export default function VerifyEmailPage() {
+  return (
+    <Suspense fallback={
+      <div className="w-full max-w-md">
+        <div className="bg-white/5 backdrop-blur border border-white/10 rounded-2xl p-10 text-center">
+          <Loader2 className="w-16 h-16 text-gold-DEFAULT animate-spin mx-auto mb-6" />
+          <p className="text-white/50">Chargement...</p>
+        </div>
+      </div>
+    }>
+      <VerifyContent />
+    </Suspense>
   );
 }

@@ -12,6 +12,8 @@ const paymentRoutes  = require('./routes/payment');
 const documentRoutes = require('./routes/documents');
 const adminRoutes    = require('./routes/admin');
 const webhookRoutes  = require('./routes/webhook');
+const setupRoutes    = require('./routes/setup');
+const seedRoutes     = require('./routes/seed');
 
 const app = express();
 
@@ -75,6 +77,8 @@ app.use('/api/payment',  paymentRoutes);
 app.use('/api/documents',documentRoutes);
 app.use('/api/admin',    adminRoutes);
 app.use('/api/webhook',  webhookRoutes);
+app.use('/api/setup',    setupRoutes);
+app.use('/api/seed',     seedRoutes);
 
 // ── 404 ───────────────────────────────────────────────────────────────────────
 app.use((req, res) => {
