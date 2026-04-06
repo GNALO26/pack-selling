@@ -3,13 +3,33 @@ module.exports = {
   content: [
     './app/**/*.{js,ts,jsx,tsx,mdx}',
     './components/**/*.{js,ts,jsx,tsx,mdx}',
+    './styles/**/*.css',
+  ],
+  // Force Tailwind à générer toutes les variantes des couleurs custom
+  safelist: [
+    // navy
+    { pattern: /^(bg|text|border|from|to|via|ring|fill|stroke|shadow)-(navy)(-(DEFAULT|50|100|200|300|400|500|600|700|800|900))?(\/(5|10|20|30|40|50|60|70|80|90|95))?$/ },
+    // gold
+    { pattern: /^(bg|text|border|from|to|via|ring|fill|stroke|shadow)-(gold)(-(DEFAULT|light|dark))?(\/(5|10|15|20|30|40|50|60|70|80|90))?$/ },
+    // brand
+    { pattern: /^(bg|text|border|from|to|via|ring|fill|stroke)-(brand)-(blue|lblue|sky)(\/(5|10|20|30|40|50))?$/ },
+    // hover variants
+    { pattern: /^hover:(bg|text|border)-(navy|gold|brand-(blue|lblue|sky))(-(DEFAULT|50|100|200|300|400|500|600|700|800|900|light|dark))?$/ },
+    // animations
+    'animate-pulse-gold', 'animate-fade-in', 'animate-slide-up', 'animate-slide-right', 'animate-shimmer',
+    // background images
+    'bg-navy-gradient', 'bg-gold-gradient', 'bg-hero-pattern',
+    // shadows
+    'shadow-gold', 'shadow-navy', 'shadow-card', 'shadow-card-hover',
+    // font families
+    'font-display', 'font-body', 'font-mono',
   ],
   theme: {
     extend: {
       colors: {
         navy: {
           DEFAULT: '#0A1628',
-          50: '#E8EDF5',
+          50:  '#E8EDF5',
           100: '#C5D0E6',
           200: '#8FA2CC',
           300: '#5974B2',
@@ -22,13 +42,13 @@ module.exports = {
         },
         gold: {
           DEFAULT: '#F9A825',
-          light: '#FFFDE7',
-          dark: '#E65100',
+          light:   '#FFFDE7',
+          dark:    '#E65100',
         },
         brand: {
-          blue: '#1565C0',
+          blue:  '#1565C0',
           lblue: '#1E88E5',
-          sky: '#E3F2FD',
+          sky:   '#E3F2FD',
         },
       },
       fontFamily: {
@@ -37,11 +57,11 @@ module.exports = {
         mono:    ['var(--font-mono)', 'monospace'],
       },
       animation: {
-        'fade-in':      'fadeIn 0.5s ease-out forwards',
-        'slide-up':     'slideUp 0.6s ease-out forwards',
-        'slide-right':  'slideRight 0.5s ease-out forwards',
-        'pulse-gold':   'pulseGold 2s ease-in-out infinite',
-        'shimmer':      'shimmer 2s linear infinite',
+        'fade-in':    'fadeIn 0.5s ease-out forwards',
+        'slide-up':   'slideUp 0.6s ease-out forwards',
+        'slide-right':'slideRight 0.5s ease-out forwards',
+        'pulse-gold': 'pulseGold 2s ease-in-out infinite',
+        'shimmer':    'shimmer 2s linear infinite',
       },
       keyframes: {
         fadeIn:    { from: { opacity: 0 }, to: { opacity: 1 } },
@@ -56,10 +76,10 @@ module.exports = {
         'hero-pattern':  "url(\"data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='0.03'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E\")",
       },
       boxShadow: {
-        'gold': '0 0 30px rgba(249, 168, 37, 0.3)',
-        'navy': '0 20px 60px rgba(10, 22, 40, 0.4)',
-        'card': '0 4px 24px rgba(0,0,0,0.08)',
-        'card-hover': '0 12px 40px rgba(0,0,0,0.15)',
+        'gold':      '0 0 30px rgba(249, 168, 37, 0.3)',
+        'navy':      '0 20px 60px rgba(10, 22, 40, 0.4)',
+        'card':      '0 4px 24px rgba(0,0,0,0.08)',
+        'card-hover':'0 12px 40px rgba(0,0,0,0.15)',
       },
     },
   },

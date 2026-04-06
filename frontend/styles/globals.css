@@ -78,7 +78,7 @@
     @apply inline-flex items-center justify-center gap-2 px-4 py-2
            text-gray-600 font-medium rounded-lg
            transition-all duration-150
-           hover:bg-gray-100 hover:text-navy-DEFAULT;
+           hover:bg-gray-100 hover:text-gray-900;
   }
 
   /* ── Inputs ────────────────────────────────────────────── */
@@ -139,7 +139,7 @@
     @apply mb-8;
   }
   .page-header h1 {
-    @apply text-3xl md:text-4xl font-bold text-navy-DEFAULT mb-2;
+    @apply text-3xl md:text-4xl font-bold text-gray-900 mb-2;
     font-family: var(--font-display), Georgia, serif;
   }
   .page-header p {
