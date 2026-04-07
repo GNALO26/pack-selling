@@ -13,7 +13,6 @@ const documentRoutes = require('./routes/documents');
 const adminRoutes    = require('./routes/admin');
 const webhookRoutes  = require('./routes/webhook');
 const setupRoutes    = require('./routes/setup');
-const seedRoutes     = require('./routes/seed');
 
 const app = express();
 
