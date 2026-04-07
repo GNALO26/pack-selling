@@ -1,5 +1,5 @@
 node_modules/
 .env
-private/documents/*.pdf
+#private/documents/*.pdf
 *.log
 .DS_Store
