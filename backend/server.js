@@ -77,7 +77,7 @@ app.use('/api/documents',documentRoutes);
 app.use('/api/admin',    adminRoutes);
 app.use('/api/webhook',  webhookRoutes);
 app.use('/api/setup',    setupRoutes);
-app.use('/api/seed',     seedRoutes);
+
 
 // ── 404 ───────────────────────────────────────────────────────────────────────
 app.use((req, res) => {
