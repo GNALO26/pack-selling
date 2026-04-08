@@ -17,6 +17,9 @@ const packsRoutes    = require('./routes/packs');
 
 const app = express();
 
+// ── Trust proxy (Render / Netlify / tous les hébergeurs derrière un reverse proxy)
+app.set('trust proxy', 1);
+
 // ── Connect MongoDB ──────────────────────────────────────────────────────────
 connectDB();
 

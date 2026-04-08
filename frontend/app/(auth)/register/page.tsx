@@ -1,6 +1,7 @@
 'use client';
 import { useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -8,6 +9,7 @@ import { motion } from 'framer-motion';
 import { Eye, EyeOff, UserPlus, Mail, Lock, User, Phone, CheckCircle } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { authApi } from '@/lib/api';
+import { useAuthStore } from '@/lib/store';
 import { getErrorMessage } from '@/lib/utils';
 
 const schema = z.object({
@@ -21,6 +23,8 @@ const schema = z.object({
 type F = z.infer<typeof schema>;
 
 export default function RegisterPage() {
+  const router  = useRouter();
+  const setAuth = useAuthStore(s => s.setAuth);
   const [done, setDone]   = useState(false);
   const [email, setEmail] = useState('');
   const [show, setShow]   = useState(false);
@@ -28,8 +32,19 @@ export default function RegisterPage() {
 
   const onSubmit = async (data: F) => {
     try {
-      await authApi.register({ firstName:data.firstName, lastName:data.lastName, email:data.email, password:data.password, phone:data.phone });
-      setEmail(data.email); setDone(true);
+      const res = await authApi.register({
+        firstName: data.firstName, lastName: data.lastName,
+        email: data.email, password: data.password, phone: data.phone,
+      });
+      // Si le serveur retourne un token (SKIP_EMAIL_VERIFY=true) → connexion directe
+      if ((res.data as any).autoLogin && (res.data as any).token) {
+        setAuth((res.data as any).user, (res.data as any).token);
+        toast.success('Compte créé — Bienvenue !');
+        router.push('/dashboard');
+      } else {
+        setEmail(data.email);
+        setDone(true);
+      }
     } catch (err) { toast.error(getErrorMessage(err)); }
   };
 
@@ -80,19 +95,23 @@ export default function RegisterPage() {
             </div>
           </div>
 
-          {[
-            { key:'email',    type:'email',    icon:Mail,  ph:'votre@email.com',    label:'Email' },
-            { key:'phone',    type:'tel',      icon:Phone, ph:'+229 XX XX XX XX',   label:'Téléphone (optionnel)' },
-          ].map(({key,type,icon:Icon,ph,label})=>(
-            <div key={key}>
-              <label className="label text-xs">{label}</label>
-              <div className="relative">
-                <Icon className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5" style={{color:'var(--text-3)'}}/>
-                <input {...register(key as any)} type={type} placeholder={ph} className={`input pl-9 text-sm ${(errors as any)[key]?'input-error':''}`}/>
-              </div>
-              {(errors as any)[key] && <p className="text-xs mt-1" style={{color:'var(--magenta)'}}>{(errors as any)[key]?.message}</p>}
+          <div>
+            <label className="label text-xs">Email</label>
+            <div className="relative">
+              <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5" style={{color:'var(--text-3)'}}/>
+              <input {...register('email')} type="email" placeholder="votre@email.com"
+                className={`input pl-9 text-sm ${errors.email?'input-error':''}`}/>
             </div>
-          ))}
+            {errors.email && <p className="text-xs mt-1" style={{color:'var(--magenta)'}}>{errors.email.message}</p>}
+          </div>
+
+          <div>
+            <label className="label text-xs">Téléphone <span style={{color:'var(--text-3)'}}>(optionnel)</span></label>
+            <div className="relative">
+              <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5" style={{color:'var(--text-3)'}}/>
+              <input {...register('phone')} type="tel" placeholder="+229 XX XX XX XX" className="input pl-9 text-sm"/>
+            </div>
+          </div>
 
           <div>
             <label className="label text-xs">Mot de passe</label>
@@ -108,7 +127,7 @@ export default function RegisterPage() {
           </div>
 
           <div>
-            <label className="label text-xs">Confirmer</label>
+            <label className="label text-xs">Confirmer le mot de passe</label>
             <div className="relative">
               <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5" style={{color:'var(--text-3)'}}/>
               <input {...register('confirm')} type={show?'text':'password'} placeholder="••••••••"
@@ -118,7 +137,7 @@ export default function RegisterPage() {
           </div>
 
           <button type="submit" disabled={isSubmitting} className="btn-primary w-full py-3.5 justify-center mt-2">
-            {isSubmitting?<><div className="spinner"/>&nbsp;Création...</>:<><UserPlus className="w-4 h-4"/> CRÉER MON COMPTE</>}
+            {isSubmitting?<><div className="spinner"/>&nbsp;CRÉATION...</>:<><UserPlus className="w-4 h-4"/> CRÉER MON COMPTE</>}
           </button>
         </form>
 

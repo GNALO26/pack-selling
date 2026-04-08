@@ -29,22 +29,44 @@ exports.register = async (req, res, next) => {
       return res.status(409).json({ error: 'Un compte existe déjà avec cet email.' });
     }
 
-    const verifToken = generateVerifToken();
+    // Si SKIP_EMAIL_VERIFY=true → compte activé immédiatement (SMTP non fonctionnel)
+    const skipVerif = process.env.SKIP_EMAIL_VERIFY === 'true';
+    const verifToken = require('crypto').randomBytes(32).toString('hex');
+
     const user = await User.create({
       firstName,
       lastName,
       email,
       password,
       phone,
-      emailVerificationToken: verifToken,
-      emailVerificationExpires: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24h
+      isEmailVerified: skipVerif, // true si SKIP_EMAIL_VERIFY
+      emailVerificationToken:   skipVerif ? undefined : verifToken,
+      emailVerificationExpires: skipVerif ? undefined : new Date(Date.now() + 24 * 60 * 60 * 1000),
     });
 
+    if (skipVerif) {
+      // Connexion directe sans vérification email
+      const token = signToken(user._id);
+      return res.status(201).json({
+        message: 'Compte créé avec succès.',
+        token,
+        user: {
+          id: user._id,
+          email: user.email,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          role: user.role,
+          purchases: user.purchases || [],
+        },
+        autoLogin: true,
+      });
+    }
+
     // Envoyer email de vérification
-    const verifUrl = `${process.env.FRONTEND_URL}/auth/verify?token=${verifToken}`;
+    const verifUrl = `${process.env.FRONTEND_URL}/verify?token=${verifToken}`;
     await sendEmail({
       to: user.email,
-      subject: 'Vérifiez votre email — Pack Digital 360',
+      subject: 'Vérifiez votre email — GUI-LOK DEV',
       template: 'verifyEmail',
       data: { firstName: user.firstName, verifUrl },
     });
