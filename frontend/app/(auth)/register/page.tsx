@@ -11,191 +11,121 @@ import { authApi } from '@/lib/api';
 import { getErrorMessage } from '@/lib/utils';
 
 const schema = z.object({
-  firstName: z.string().min(2, 'Prénom requis (min 2 caractères)'),
-  lastName:  z.string().min(2, 'Nom requis (min 2 caractères)'),
+  firstName: z.string().min(2,'Prénom requis'),
+  lastName:  z.string().min(2,'Nom requis'),
   email:     z.string().email('Email invalide'),
   phone:     z.string().optional(),
-  password:  z.string().min(8, 'Minimum 8 caractères'),
+  password:  z.string().min(8,'Minimum 8 caractères'),
   confirm:   z.string(),
-}).refine(d => d.password === d.confirm, {
-  message: 'Les mots de passe ne correspondent pas',
-  path: ['confirm'],
-});
-type FormData = z.infer<typeof schema>;
+}).refine(d=>d.password===d.confirm,{ message:'Les mots de passe ne correspondent pas', path:['confirm'] });
+type F = z.infer<typeof schema>;
 
 export default function RegisterPage() {
   const [done, setDone]   = useState(false);
   const [email, setEmail] = useState('');
   const [show, setShow]   = useState(false);
+  const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<F>({ resolver: zodResolver(schema) });
 
-  const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<FormData>({
-    resolver: zodResolver(schema),
-  });
-
-  const onSubmit = async (data: FormData) => {
+  const onSubmit = async (data: F) => {
     try {
-      await authApi.register({
-        firstName: data.firstName,
-        lastName:  data.lastName,
-        email:     data.email,
-        password:  data.password,
-        phone:     data.phone,
-      });
-      setEmail(data.email);
-      setDone(true);
-    } catch (err) {
-      toast.error(getErrorMessage(err));
-    }
+      await authApi.register({ firstName:data.firstName, lastName:data.lastName, email:data.email, password:data.password, phone:data.phone });
+      setEmail(data.email); setDone(true);
+    } catch (err) { toast.error(getErrorMessage(err)); }
   };
 
-  if (done) {
-    return (
-      <motion.div
-        initial={{ opacity: 0, scale: 0.95 }}
-        animate={{ opacity: 1, scale: 1 }}
-        className="w-full max-w-md"
-      >
-        <div className="bg-white/5 backdrop-blur border border-white/10 rounded-2xl p-10 text-center shadow-navy">
-          <div className="w-20 h-20 rounded-full bg-green-500/20 border-2 border-green-400/40 flex items-center justify-center mx-auto mb-6">
-            <CheckCircle className="w-10 h-10 text-green-400" />
-          </div>
-          <h1 className="text-2xl font-display font-bold text-white mb-3">
-            Vérifiez votre email
-          </h1>
-          <p className="text-white/60 leading-relaxed mb-2">
-            Un email de confirmation a été envoyé à
-          </p>
-          <p className="text-gold-DEFAULT font-semibold mb-6">{email}</p>
-          <p className="text-white/50 text-sm mb-8">
-            Cliquez sur le lien dans l&apos;email pour activer votre compte et procéder au paiement.
-            Le lien est valable <strong className="text-white">24 heures</strong>.
-          </p>
-          <Link href="/login" className="btn-outline border-white/30 text-white hover:bg-white/10 w-full justify-center">
-            Retour à la connexion
-          </Link>
+  if (done) return (
+    <motion.div initial={{opacity:0,scale:.95}} animate={{opacity:1,scale:1}} className="w-full max-w-md">
+      <div className="card corners p-10 text-center" style={{ border:'1px solid rgba(0,255,136,0.2)' }}>
+        <div className="w-20 h-20 rounded-full mx-auto mb-6 flex items-center justify-center"
+          style={{ background:'rgba(0,255,136,0.1)', border:'2px solid rgba(0,255,136,0.35)' }}>
+          <CheckCircle className="w-10 h-10" style={{ color:'var(--green)' }}/>
         </div>
-      </motion.div>
-    );
-  }
+        <h1 className="text-xl mb-3" style={{ fontFamily:'Orbitron,monospace', color:'var(--green)' }}>EMAIL ENVOYÉ</h1>
+        <p className="mb-2 text-sm" style={{ color:'var(--text-2)', fontFamily:'Rajdhani,sans-serif' }}>Vérifiez votre boîte mail :</p>
+        <p className="font-bold mb-6 text-sm" style={{ color:'var(--cyan)', fontFamily:'JetBrains Mono,monospace' }}>{email}</p>
+        <p className="text-sm mb-8" style={{ color:'var(--text-2)', fontFamily:'Rajdhani,sans-serif' }}>
+          Cliquez sur le lien de confirmation pour activer votre compte. Valable <strong style={{color:'var(--text-1)'}}>24 heures</strong>.
+        </p>
+        <Link href="/login" className="btn-outline w-full justify-center">Retour à la connexion</Link>
+      </div>
+    </motion.div>
+  );
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 24 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.5 }}
-      className="w-full max-w-md"
-    >
-      <div className="bg-white/5 backdrop-blur border border-white/10 rounded-2xl p-8 shadow-navy">
+    <motion.div initial={{opacity:0,y:32}} animate={{opacity:1,y:0}} transition={{duration:.5}} className="w-full max-w-md">
+      <div className="card corners p-8" style={{ border:'1px solid rgba(0,212,255,0.15)' }}>
         <div className="text-center mb-8">
-          <div className="w-14 h-14 rounded-2xl bg-gold-DEFAULT/20 border border-gold-DEFAULT/30 flex items-center justify-center mx-auto mb-4">
-            <UserPlus className="w-7 h-7 text-gold-DEFAULT" />
+          <div className="w-14 h-14 mx-auto mb-4 flex items-center justify-center"
+            style={{ background:'rgba(0,212,255,0.08)', border:'1px solid rgba(0,212,255,0.25)', clipPath:'polygon(10px 0%,100% 0%,calc(100% - 10px) 100%,0% 100%)' }}>
+            <UserPlus className="w-6 h-6" style={{ color:'var(--cyan)' }}/>
           </div>
-          <h1 className="text-2xl font-display font-bold text-white mb-1">Créer un compte</h1>
-          <p className="text-white/50 text-sm">Accédez au Pack Digital 360</p>
+          <h1 className="text-xl mb-1" style={{ fontFamily:'Orbitron,monospace', color:'var(--cyan)' }}>CRÉER UN COMPTE</h1>
+          <p className="text-sm" style={{ color:'var(--text-2)', fontFamily:'Rajdhani,sans-serif' }}>Accédez aux guides GUI-LOK DEV</p>
         </div>
 
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-          {/* Nom / Prénom */}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="label text-white/80 text-xs">Prénom</label>
+              <label className="label text-xs">Prénom</label>
               <div className="relative">
-                <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30" />
-                <input
-                  {...register('firstName')}
-                  placeholder="Olympe"
-                  className="input pl-9 bg-white/10 border-white/20 text-white placeholder:text-white/30 focus:ring-gold-DEFAULT/50 text-sm"
-                />
+                <User className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5" style={{color:'var(--text-3)'}}/>
+                <input {...register('firstName')} placeholder="Olympe" className={`input pl-9 text-sm ${errors.firstName?'input-error':''}`}/>
               </div>
-              {errors.firstName && <p className="text-red-400 text-xs mt-1">{errors.firstName.message}</p>}
+              {errors.firstName && <p className="text-xs mt-1" style={{color:'var(--magenta)'}}>{errors.firstName.message}</p>}
             </div>
             <div>
-              <label className="label text-white/80 text-xs">Nom</label>
-              <input
-                {...register('lastName')}
-                placeholder="GUIDO"
-                className="input bg-white/10 border-white/20 text-white placeholder:text-white/30 focus:ring-gold-DEFAULT/50 text-sm"
-              />
-              {errors.lastName && <p className="text-red-400 text-xs mt-1">{errors.lastName.message}</p>}
+              <label className="label text-xs">Nom</label>
+              <input {...register('lastName')} placeholder="GUIDO" className={`input text-sm ${errors.lastName?'input-error':''}`}/>
+              {errors.lastName && <p className="text-xs mt-1" style={{color:'var(--magenta)'}}>{errors.lastName.message}</p>}
             </div>
           </div>
 
-          {/* Email */}
-          <div>
-            <label className="label text-white/80 text-xs">Email</label>
-            <div className="relative">
-              <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30" />
-              <input
-                {...register('email')}
-                type="email"
-                placeholder="votre@email.com"
-                className="input pl-10 bg-white/10 border-white/20 text-white placeholder:text-white/30 focus:ring-gold-DEFAULT/50"
-              />
+          {[
+            { key:'email',    type:'email',    icon:Mail,  ph:'votre@email.com',    label:'Email' },
+            { key:'phone',    type:'tel',      icon:Phone, ph:'+229 XX XX XX XX',   label:'Téléphone (optionnel)' },
+          ].map(({key,type,icon:Icon,ph,label})=>(
+            <div key={key}>
+              <label className="label text-xs">{label}</label>
+              <div className="relative">
+                <Icon className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5" style={{color:'var(--text-3)'}}/>
+                <input {...register(key as any)} type={type} placeholder={ph} className={`input pl-9 text-sm ${(errors as any)[key]?'input-error':''}`}/>
+              </div>
+              {(errors as any)[key] && <p className="text-xs mt-1" style={{color:'var(--magenta)'}}>{(errors as any)[key]?.message}</p>}
             </div>
-            {errors.email && <p className="text-red-400 text-xs mt-1">{errors.email.message}</p>}
-          </div>
+          ))}
 
-          {/* Téléphone */}
           <div>
-            <label className="label text-white/80 text-xs">Téléphone <span className="text-white/30">(optionnel)</span></label>
+            <label className="label text-xs">Mot de passe</label>
             <div className="relative">
-              <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30" />
-              <input
-                {...register('phone')}
-                type="tel"
-                placeholder="+229 XX XX XX XX"
-                className="input pl-10 bg-white/10 border-white/20 text-white placeholder:text-white/30 focus:ring-gold-DEFAULT/50"
-              />
-            </div>
-          </div>
-
-          {/* Password */}
-          <div>
-            <label className="label text-white/80 text-xs">Mot de passe</label>
-            <div className="relative">
-              <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30" />
-              <input
-                {...register('password')}
-                type={show ? 'text' : 'password'}
-                placeholder="Minimum 8 caractères"
-                className="input pl-10 pr-10 bg-white/10 border-white/20 text-white placeholder:text-white/30 focus:ring-gold-DEFAULT/50"
-              />
-              <button type="button" onClick={() => setShow(!show)} className="absolute right-3 top-1/2 -translate-y-1/2 text-white/30 hover:text-white/70">
-                {show ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5" style={{color:'var(--text-3)'}}/>
+              <input {...register('password')} type={show?'text':'password'} placeholder="Minimum 8 caractères"
+                className={`input pl-9 pr-9 text-sm ${errors.password?'input-error':''}`}/>
+              <button type="button" onClick={()=>setShow(!show)} className="absolute right-3 top-1/2 -translate-y-1/2" style={{color:'var(--text-3)'}}>
+                {show?<EyeOff className="w-4 h-4"/>:<Eye className="w-4 h-4"/>}
               </button>
             </div>
-            {errors.password && <p className="text-red-400 text-xs mt-1">{errors.password.message}</p>}
+            {errors.password && <p className="text-xs mt-1" style={{color:'var(--magenta)'}}>{errors.password.message}</p>}
           </div>
 
-          {/* Confirm */}
           <div>
-            <label className="label text-white/80 text-xs">Confirmer le mot de passe</label>
+            <label className="label text-xs">Confirmer</label>
             <div className="relative">
-              <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30" />
-              <input
-                {...register('confirm')}
-                type={show ? 'text' : 'password'}
-                placeholder="••••••••"
-                className="input pl-10 bg-white/10 border-white/20 text-white placeholder:text-white/30 focus:ring-gold-DEFAULT/50"
-              />
+              <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5" style={{color:'var(--text-3)'}}/>
+              <input {...register('confirm')} type={show?'text':'password'} placeholder="••••••••"
+                className={`input pl-9 text-sm ${errors.confirm?'input-error':''}`}/>
             </div>
-            {errors.confirm && <p className="text-red-400 text-xs mt-1">{errors.confirm.message}</p>}
+            {errors.confirm && <p className="text-xs mt-1" style={{color:'var(--magenta)'}}>{errors.confirm.message}</p>}
           </div>
 
-          <button type="submit" disabled={isSubmitting} className="btn-gold w-full py-3.5 text-base mt-2">
-            {isSubmitting ? <><div className="spinner" /> Création...</> : <><UserPlus className="w-5 h-5" /> Créer mon compte</>}
+          <button type="submit" disabled={isSubmitting} className="btn-primary w-full py-3.5 justify-center mt-2">
+            {isSubmitting?<><div className="spinner"/>&nbsp;Création...</>:<><UserPlus className="w-4 h-4"/> CRÉER MON COMPTE</>}
           </button>
         </form>
 
-        <div className="divider my-5">
-          <span className="text-white/30 text-xs px-2">ou</span>
-        </div>
-
-        <p className="text-center text-white/50 text-sm">
+        <div className="divider"><span className="text-xs px-2" style={{color:'var(--text-3)',fontFamily:'JetBrains Mono,monospace'}}>ou</span></div>
+        <p className="text-center text-sm" style={{color:'var(--text-2)',fontFamily:'Rajdhani,sans-serif'}}>
           Déjà un compte ?{' '}
-          <Link href="/login" className="text-gold-DEFAULT hover:text-gold-DEFAULT/80 font-semibold">
-            Se connecter
-          </Link>
+          <Link href="/login" className="font-bold" style={{color:'var(--cyan)'}}>Se connecter</Link>
         </p>
       </div>
     </motion.div>

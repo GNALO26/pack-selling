@@ -13,6 +13,7 @@ const documentRoutes = require('./routes/documents');
 const adminRoutes    = require('./routes/admin');
 const webhookRoutes  = require('./routes/webhook');
 const setupRoutes    = require('./routes/setup');
+const packsRoutes    = require('./routes/packs');
 
 const app = express();
 
@@ -77,7 +78,7 @@ app.use('/api/documents',documentRoutes);
 app.use('/api/admin',    adminRoutes);
 app.use('/api/webhook',  webhookRoutes);
 app.use('/api/setup',    setupRoutes);
-
+app.use('/api/packs',    packsRoutes);
 
 // ── 404 ───────────────────────────────────────────────────────────────────────
 app.use((req, res) => {

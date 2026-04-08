@@ -1,82 +1,81 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import Link from 'next/link';
-import { LayoutDashboard, Users, CreditCard, BookOpen, LogOut, ArrowLeft } from 'lucide-react';
+import Image from 'next/image';
+import { LayoutDashboard, Users, CreditCard, LogOut, ArrowLeft } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
+  const path   = usePathname();
   const { user, isAuthenticated, logout } = useAuthStore();
-  const [mounted, setMounted] = useState(false);
+  const [ready, setReady] = useState(false);
 
-  useEffect(() => { setMounted(true); }, []);
-
+  useEffect(() => setReady(true), []);
   useEffect(() => {
-    if (mounted && (!isAuthenticated || user?.role !== 'admin')) {
+    if (ready && (!isAuthenticated || user?.role !== 'admin')) {
       router.replace(isAuthenticated ? '/dashboard' : '/login');
     }
-  }, [mounted, isAuthenticated, user, router]);
+  }, [ready, isAuthenticated, user, router]);
 
-  if (!mounted || !isAuthenticated || user?.role !== 'admin') {
-    return <div className="min-h-screen bg-navy-DEFAULT flex items-center justify-center">
-      <div className="w-8 h-8 border-2 border-gold-DEFAULT/30 border-t-gold-DEFAULT rounded-full animate-spin" />
-    </div>;
-  }
+  if (!ready || !isAuthenticated || user?.role !== 'admin') return (
+    <div className="min-h-screen flex items-center justify-center" style={{background:'var(--bg-void)'}}>
+      <div className="w-8 h-8 rounded-full animate-spin" style={{border:'2px solid rgba(0,212,255,0.15)',borderTopColor:'var(--cyan)'}}/>
+    </div>
+  );
 
-  const navLinks = [
-    { href: '/admin',         label: 'Dashboard',     icon: LayoutDashboard },
-    { href: '/admin/clients', label: 'Clients',       icon: Users },
-    { href: '/admin/stats',   label: 'Transactions',  icon: CreditCard },
+  const nav = [
+    {href:'/admin',         label:'DASHBOARD',    icon:LayoutDashboard},
+    {href:'/admin/clients', label:'CLIENTS',      icon:Users},
+    {href:'/admin/stats',   label:'TRANSACTIONS', icon:CreditCard},
   ];
 
   return (
-    <div className="min-h-screen bg-slate-50 flex">
-      {/* Sidebar */}
-      <aside className="w-60 bg-navy-DEFAULT fixed inset-y-0 left-0 flex flex-col">
-        <div className="p-5 border-b border-white/10">
+    <div className="min-h-screen flex" style={{background:'var(--bg-void)'}}>
+      <aside className="w-56 fixed inset-y-0 left-0 flex flex-col" style={{background:'var(--bg-deep)',borderRight:'1px solid rgba(255,0,110,0.1)'}}>
+        <div className="p-4" style={{borderBottom:'1px solid rgba(255,0,110,0.08)'}}>
           <div className="flex items-center gap-2 mb-1">
-            <BookOpen className="w-5 h-5 text-gold-DEFAULT" />
-            <span className="text-gold-DEFAULT font-display font-bold">Pack Digital 360</span>
+            <div className="relative w-8 h-8"><Image src="/logo.png" alt="GUI-LOK" fill className="object-contain"/></div>
+            <div className="text-xs font-bold tracking-widest" style={{fontFamily:'Orbitron,monospace',color:'var(--magenta)'}}>GUI-LOK DEV</div>
           </div>
-          <div className="badge-gold text-xs">Administration</div>
+          <div className="badge-magenta badge text-xs">ADMINISTRATION</div>
         </div>
-
-        <div className="p-4 border-b border-white/10">
-          <div className="text-white text-sm font-semibold">{user.firstName} {user.lastName}</div>
-          <div className="text-white/40 text-xs">{user.email}</div>
+        <div className="p-3 text-xs" style={{borderBottom:'1px solid rgba(255,255,255,0.04)',color:'var(--text-2)',fontFamily:'JetBrains Mono,monospace'}}>
+          {user.firstName} {user.lastName}
         </div>
-
         <nav className="flex-1 p-3 space-y-1">
-          {navLinks.map(({ href, label, icon: Icon }) => (
-            <Link key={href} href={href}
-              className="flex items-center gap-3 px-4 py-2.5 rounded-xl text-white/60 hover:text-white hover:bg-white/10 transition-all text-sm group">
-              <Icon className="w-4 h-4 group-hover:text-gold-DEFAULT transition-colors" />
-              {label}
-            </Link>
-          ))}
-
-          <div className="pt-2 border-t border-white/10 mt-2">
-            <Link href="/dashboard"
-              className="flex items-center gap-3 px-4 py-2.5 rounded-xl text-white/40 hover:text-white hover:bg-white/10 transition-all text-sm">
-              <ArrowLeft className="w-4 h-4" /> Espace client
+          {nav.map(({href,label,icon:Icon})=>{
+            const active = path===href || (path.startsWith(href+'/') && href!=='/admin');
+            return (
+              <Link key={href} href={href}
+                className="flex items-center gap-3 px-3 py-2.5 text-xs tracking-widest transition-all duration-200"
+                style={{fontFamily:'Orbitron,monospace',color:active?'var(--magenta)':'var(--text-2)',background:active?'rgba(255,0,110,0.08)':'transparent',borderLeft:active?'2px solid var(--magenta)':'2px solid transparent'}}>
+                <Icon className="w-3.5 h-3.5 shrink-0"/>{label}
+              </Link>
+            );
+          })}
+          <div className="pt-2" style={{borderTop:'1px solid rgba(255,255,255,0.04)',marginTop:'8px'}}>
+            <Link href="/dashboard" className="flex items-center gap-3 px-3 py-2.5 text-xs tracking-widest transition-all duration-200"
+              style={{fontFamily:'Orbitron,monospace',color:'var(--text-3)'}}
+              onMouseEnter={e=>(e.currentTarget.style.color='var(--cyan)')} onMouseLeave={e=>(e.currentTarget.style.color='var(--text-3)')}>
+              <ArrowLeft className="w-3.5 h-3.5"/>ESPACE CLIENT
             </Link>
           </div>
         </nav>
-
-        <div className="p-3 border-t border-white/10">
-          <button onClick={() => { logout(); router.push('/'); }}
-            className="flex items-center gap-3 px-4 py-2.5 rounded-xl text-white/40 hover:text-red-400 hover:bg-red-500/10 transition-all text-sm w-full">
-            <LogOut className="w-4 h-4" /> Déconnexion
+        <div className="p-3" style={{borderTop:'1px solid rgba(255,255,255,0.04)'}}>
+          <button onClick={()=>{logout();router.push('/');}} className="flex items-center gap-3 px-3 py-2.5 text-xs tracking-widest w-full transition-all duration-200"
+            style={{fontFamily:'Orbitron,monospace',color:'var(--text-3)'}}
+            onMouseEnter={e=>(e.currentTarget.style.color='var(--magenta)')} onMouseLeave={e=>(e.currentTarget.style.color='var(--text-3)')}>
+            <LogOut className="w-3.5 h-3.5"/>DÉCONNEXION
           </button>
         </div>
       </aside>
-
-      {/* Main */}
-      <div className="flex-1 ml-60">
-        <header className="bg-white border-b border-gray-100 h-14 flex items-center px-6 sticky top-0 z-30">
-          <div className="flex-1" />
-          <div className="badge-gold text-xs">Mode Admin</div>
+      <div className="flex-1 ml-56">
+        <header className="h-14 flex items-center px-6 sticky top-0 z-30"
+          style={{background:'var(--bg-deep)',borderBottom:'1px solid rgba(255,0,110,0.08)'}}>
+          <div className="flex-1"/>
+          <div className="badge-magenta badge text-xs">MODE ADMIN</div>
         </header>
         <main className="p-6 lg:p-8">{children}</main>
       </div>

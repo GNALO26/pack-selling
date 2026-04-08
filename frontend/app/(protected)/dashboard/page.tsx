@@ -2,319 +2,235 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
-import {
-  BookOpen, CreditCard, CheckCircle, Lock,
-  FileText, Clock, ArrowRight, Loader2, Star,
-} from 'lucide-react';
+import { BookOpen, CreditCard, CheckCircle, Lock, FileText, Clock, ArrowRight, Loader2, Zap } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { authApi, paymentApi, documentsApi, type Pack, type Document } from '@/lib/api';
+import { authApi, paymentApi, documentsApi, packsApi, type Pack, type Document } from '@/lib/api';
 import { useAuthStore } from '@/lib/store';
 import { formatCurrency, formatDate, formatFileSize, getErrorMessage } from '@/lib/utils';
 
-const PACK_ID = process.env.NEXT_PUBLIC_PACK_ID || '';
-
 export default function DashboardPage() {
-  const router        = useRouter();
+  const router    = useRouter();
   const { user, setUser } = useAuthStore();
-  const [pack, setPack]   = useState<Pack | null>(null);
-  const [docs, setDocs]   = useState<Document[]>([]);
-  const [paying, setPaying] = useState(false);
+  const [packs,   setPacks]   = useState<Pack[]>([]);
+  const [docMap,  setDocMap]  = useState<Record<string, Document[]>>({});
+  const [paying,  setPaying]  = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Rafraîchit les données user depuis l'API
-  const refreshUser = useCallback(async () => {
-    try {
-      const res = await authApi.getMe();
-      setUser(res.data.user);
-    } catch { /* silent */ }
+  const refresh = useCallback(async () => {
+    try { const r = await authApi.getMe(); setUser(r.data.user); } catch{}
   }, [setUser]);
 
-  // Charge les données du pack si acheté
-  const loadPackDocs = useCallback(async () => {
-    if (!PACK_ID) return;
+  const loadDocs = useCallback(async (packId: string) => {
     try {
-      const res = await documentsApi.list(PACK_ID);
-      setPack({ _id: PACK_ID, name: res.data.packName } as Pack);
-      setDocs(res.data.documents);
-    } catch { /* pas encore acheté */ }
+      const r = await documentsApi.list(packId);
+      setDocMap(prev => ({ ...prev, [packId]: r.data.documents }));
+    } catch {}
   }, []);
 
   useEffect(() => {
     const init = async () => {
-      setLoading(true);
-      await refreshUser();
+      await refresh();
+      const r = await packsApi.getAll().catch(() => ({ data: { packs: [] } }));
+      setPacks(r.data.packs);
       setLoading(false);
     };
     init();
-  }, [refreshUser]);
+  }, [refresh]);
 
-  // Charger les docs si l'user a acheté
   useEffect(() => {
-    const hasPack = user?.purchases?.some(p => {
-      const id = typeof p.packId === 'string' ? p.packId : p.packId?._id;
-      return id === PACK_ID;
+    if (!user || !packs.length) return;
+    packs.forEach(pack => {
+      const owned = user.purchases?.some(p => {
+        const id = typeof p.packId === 'string' ? p.packId : (p.packId as any)?._id;
+        return id === pack._id;
+      });
+      if (owned) loadDocs(pack._id);
     });
-    if (hasPack) loadPackDocs();
-  }, [user, loadPackDocs]);
+  }, [user, packs, loadDocs]);
 
-  // Vérifier le statut du paiement (retour FedaPay)
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const txnId  = params.get('transaction_id');
-    const status = params.get('status');
-
-    if (txnId && status === 'approved') {
-      toast.success('Paiement confirmé ! Votre accès est activé.');
-      // Nettoyer l'URL
+    const p = new URLSearchParams(window.location.search);
+    const txId = p.get('transaction_id'), status = p.get('status');
+    if (txId && status === 'approved') {
+      toast.success('PAIEMENT CONFIRMÉ — Accès activé !');
       window.history.replaceState({}, '', '/dashboard');
-      // Attendre le webhook puis rafraîchir
-      setTimeout(() => { refreshUser(); loadPackDocs(); }, 3000);
-    } else if (txnId && status === 'declined') {
-      toast.error('Paiement refusé. Réessayez ou contactez le support.');
+      setTimeout(() => { refresh(); }, 3000);
+    } else if (txId && status === 'declined') {
+      toast.error('Paiement refusé. Réessayez.');
       window.history.replaceState({}, '', '/dashboard');
     }
-  }, [refreshUser, loadPackDocs]);
+  }, [refresh]);
 
-  const handlePayment = async () => {
-    if (!PACK_ID) { toast.error('Configuration manquante.'); return; }
-    setPaying(true);
+  const hasPurchased = (packId: string) => user?.purchases?.some(p => {
+    const id = typeof p.packId === 'string' ? p.packId : (p.packId as any)?._id;
+    return id === packId;
+  });
+
+  const getPurchase = (packId: string) => user?.purchases?.find(p => {
+    const id = typeof p.packId === 'string' ? p.packId : (p.packId as any)?._id;
+    return id === packId;
+  });
+
+  const handleBuy = async (packId: string) => {
+    setPaying(packId);
     try {
-      const res = await paymentApi.initiate(PACK_ID);
-      // Redirection vers la page de paiement FedaPay
-      window.location.href = res.data.checkoutUrl;
+      const r = await paymentApi.initiate(packId);
+      window.location.href = r.data.checkoutUrl;
     } catch (err) {
       const msg = getErrorMessage(err);
-      if (msg.includes('déjà')) {
-        toast.success('Vous avez déjà accès à ce pack !');
-        refreshUser();
-      } else {
-        toast.error(msg);
-      }
-      setPaying(false);
+      if (msg.includes('déjà')) { toast.success('Vous avez déjà accès !'); refresh(); }
+      else toast.error(msg);
+      setPaying(null);
     }
   };
 
-  const openViewer = (docId: string) => {
-    router.push(`/viewer?packId=${PACK_ID}&docId=${docId}`);
-  };
+  const COLORS = [
+    { accent:'#00D4FF', glow:'rgba(0,212,255,0.12)', border:'rgba(0,212,255,0.25)', badge:'badge-cyan' },
+    { accent:'#FF006E', glow:'rgba(255,0,110,0.12)',  border:'rgba(255,0,110,0.25)',  badge:'badge-magenta' },
+    { accent:'#8B5CF6', glow:'rgba(139,92,246,0.12)', border:'rgba(139,92,246,0.25)', badge:'badge-purple' },
+  ];
 
-  const hasPurchased = user?.purchases?.some(p => {
-    const id = typeof p.packId === 'string' ? p.packId : (p.packId as any)?._id;
-    return id === PACK_ID;
-  });
-
-  const purchase = user?.purchases?.find(p => {
-    const id = typeof p.packId === 'string' ? p.packId : (p.packId as any)?._id;
-    return id === PACK_ID;
-  });
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-64">
-        <Loader2 className="w-8 h-8 text-brand-blue animate-spin" />
-      </div>
-    );
-  }
+  if (loading) return (
+    <div className="flex items-center justify-center min-h-64">
+      <div className="w-10 h-10 rounded-full animate-spin" style={{ border:'2px solid rgba(0,212,255,0.15)', borderTopColor:'var(--cyan)' }}/>
+    </div>
+  );
 
   return (
-    <div className="max-w-4xl mx-auto space-y-8">
-      {/* ── Page header ─────────────────────────────────────────────────── */}
-      <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} className="page-header">
-        <h1>Tableau de bord</h1>
-        <p>Bonjour {user?.firstName} 👋 — gérez vos accès ici.</p>
+    <div className="max-w-5xl mx-auto space-y-8">
+      {/* Header */}
+      <motion.div initial={{opacity:0,y:16}} animate={{opacity:1,y:0}} className="page-header">
+        <h1>MES PACKS</h1>
+        <p>Bienvenue, {user?.firstName}. Gérez vos accès et découvrez nos guides.</p>
       </motion.div>
 
-      {/* ── Pack Digital 360 card ───────────────────────────────────────── */}
-      <motion.div initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}>
+      {/* Packs grid */}
+      <div className="grid md:grid-cols-2 gap-6">
+        {packs.map((pack, i) => {
+          const c = COLORS[i % COLORS.length];
+          const owned    = hasPurchased(pack._id);
+          const purchase = getPurchase(pack._id);
+          const docs     = docMap[pack._id] || [];
 
-        {/* Acheté */}
-        {hasPurchased ? (
-          <div className="card p-6 border-l-4 border-l-green-500">
-            {/* Header */}
-            <div className="flex items-start justify-between mb-6">
-              <div className="flex items-center gap-4">
-                <div className="w-14 h-14 rounded-2xl bg-gold-DEFAULT/10 border border-gold-DEFAULT/20 flex items-center justify-center">
-                  <BookOpen className="w-7 h-7 text-gold-DEFAULT" />
-                </div>
-                <div>
-                  <h2 className="text-xl font-display font-bold text-navy-DEFAULT">Pack Digital 360</h2>
-                  <p className="text-gray-500 text-sm">Accès complet aux documents premium</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-2 bg-green-50 border border-green-200 rounded-full px-3 py-1.5">
-                <CheckCircle className="w-4 h-4 text-green-600" />
-                <span className="text-green-700 text-xs font-semibold">Accès actif</span>
-              </div>
-            </div>
+          return (
+            <motion.div key={pack._id} initial={{opacity:0,y:24}} animate={{opacity:1,y:0}} transition={{delay:i*.1}}
+              className="card flex flex-col" style={{ border:`1px solid ${owned ? c.border : 'var(--border-s)'}`, transition:'border-color .3s' }}>
+              <div style={{ height:'1px', background:`linear-gradient(90deg,transparent,${owned?c.accent:'rgba(255,255,255,0.1)'},transparent)` }}/>
 
-            {/* Purchase info */}
-            {purchase && (
-              <div className="bg-gray-50 rounded-xl p-4 mb-6 flex flex-wrap gap-6 text-sm">
-                <div>
-                  <span className="text-gray-400 text-xs">Date d&apos;achat</span>
-                  <p className="font-semibold text-navy-DEFAULT">{formatDate(purchase.purchasedAt)}</p>
-                </div>
-                {purchase.amount > 0 && (
+              <div className="p-6 flex flex-col flex-1">
+                {/* Header pack */}
+                <div className="flex items-start justify-between mb-4">
                   <div>
-                    <span className="text-gray-400 text-xs">Montant payé</span>
-                    <p className="font-semibold text-navy-DEFAULT">{formatCurrency(purchase.amount, purchase.currency)}</p>
+                    <div className={`badge ${c.badge} mb-2 inline-block`}>Pack #{i+1}</div>
+                    <h2 className="text-base font-bold" style={{ fontFamily:'Orbitron,monospace', color:c.accent }}>
+                      {pack.name}
+                    </h2>
+                    <p className="text-xs mt-1" style={{ color:'var(--text-2)', fontFamily:'Rajdhani,sans-serif' }}>
+                      {pack.tagline}
+                    </p>
                   </div>
-                )}
-                {purchase.grantedManually && (
-                  <div>
-                    <span className="text-gray-400 text-xs">Type d&apos;accès</span>
-                    <p className="font-semibold text-gold-DEFAULT">Offert 🎁</p>
+                  <div className="flex items-center gap-1.5 px-2.5 py-1.5 ml-3 shrink-0"
+                    style={{ background: owned?'rgba(0,255,136,0.1)':'rgba(255,255,255,0.04)', border:`1px solid ${owned?'rgba(0,255,136,0.25)':'rgba(255,255,255,0.08)'}`, clipPath:'polygon(4px 0%,100% 0%,calc(100% - 4px) 100%,0% 100%)' }}>
+                    {owned
+                      ? <><CheckCircle className="w-3 h-3" style={{color:'var(--green)'}}/><span className="text-xs" style={{color:'var(--green)',fontFamily:'JetBrains Mono,monospace'}}>ACTIF</span></>
+                      : <><Lock className="w-3 h-3" style={{color:'var(--text-3)'}}/><span className="text-xs" style={{color:'var(--text-3)',fontFamily:'JetBrains Mono,monospace'}}>VERROUILLÉ</span></>
+                    }
                   </div>
-                )}
-              </div>
-            )}
+                </div>
 
-            {/* Documents list */}
-            <h3 className="font-semibold text-navy-DEFAULT mb-4 flex items-center gap-2">
-              <FileText className="w-4 h-4 text-brand-blue" />
-              Vos documents ({docs.length})
-            </h3>
-
-            {docs.length === 0 ? (
-              <div className="flex items-center justify-center py-8">
-                <Loader2 className="w-5 h-5 text-brand-blue animate-spin" />
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {docs.map((doc, i) => (
-                  <motion.div
-                    key={doc.id}
-                    initial={{ opacity: 0, x: -12 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: i * 0.1 }}
-                    className="flex items-center gap-4 p-4 rounded-xl border border-gray-100 bg-white hover:border-brand-blue/30 hover:shadow-sm transition-all group"
-                  >
-                    <div className="w-10 h-10 rounded-lg bg-red-50 border border-red-100 flex items-center justify-center shrink-0">
-                      <FileText className="w-5 h-5 text-red-500" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="font-semibold text-navy-DEFAULT text-sm truncate">{doc.title}</p>
-                      <div className="flex items-center gap-3 mt-0.5">
-                        <span className="text-gray-400 text-xs">{doc.pageCount} pages</span>
-                        <span className="text-gray-300 text-xs">·</span>
-                        <span className="text-gray-400 text-xs">{formatFileSize(doc.fileSize)}</span>
-                        <span className="text-gray-300 text-xs">·</span>
-                        <span className="text-green-600 text-xs flex items-center gap-1">
-                          <Clock className="w-3 h-3" /> Session 30 min
-                        </span>
+                {/* Owned: show docs */}
+                {owned ? (
+                  <div className="flex-1">
+                    {purchase && (
+                      <div className="flex gap-4 mb-4 p-3 text-xs" style={{ background:'rgba(255,255,255,0.03)', border:'1px solid var(--border-s)' }}>
+                        <div>
+                          <div style={{color:'var(--text-3)',fontFamily:'JetBrains Mono,monospace'}}>Acheté le</div>
+                          <div style={{color:'var(--text-1)',fontFamily:'Rajdhani,sans-serif',fontWeight:600}}>{formatDate(purchase.purchasedAt)}</div>
+                        </div>
+                        {purchase.amount > 0 && (
+                          <div>
+                            <div style={{color:'var(--text-3)',fontFamily:'JetBrains Mono,monospace'}}>Montant</div>
+                            <div style={{color:c.accent,fontFamily:'JetBrains Mono,monospace',fontWeight:700}}>{formatCurrency(purchase.amount,purchase.currency)}</div>
+                          </div>
+                        )}
+                        {purchase.grantedManually && (
+                          <div>
+                            <div style={{color:'var(--text-3)',fontFamily:'JetBrains Mono,monospace'}}>Type</div>
+                            <div style={{color:'var(--gold)',fontFamily:'JetBrains Mono,monospace'}}>Offert 🎁</div>
+                          </div>
+                        )}
                       </div>
+                    )}
+                    <div className="space-y-2">
+                      {docs.length === 0
+                        ? <div className="flex items-center justify-center py-4"><div className="w-5 h-5 rounded-full animate-spin" style={{border:'2px solid rgba(0,212,255,0.15)',borderTopColor:'var(--cyan)'}}/></div>
+                        : docs.map((doc, j) => (
+                          <motion.div key={doc.id} initial={{opacity:0,x:-12}} animate={{opacity:1,x:0}} transition={{delay:j*.08}}
+                            className="flex items-center gap-3 p-3 cursor-pointer group transition-all duration-200"
+                            style={{ background:'rgba(255,255,255,0.03)', border:'1px solid var(--border-s)' }}
+                            onMouseEnter={e=>{ e.currentTarget.style.borderColor=c.border; e.currentTarget.style.background=`${c.glow}`; }}
+                            onMouseLeave={e=>{ e.currentTarget.style.borderColor='var(--border-s)'; e.currentTarget.style.background='rgba(255,255,255,0.03)'; }}
+                            onClick={()=>router.push(`/viewer?packId=${pack._id}&docId=${doc.id}`)}>
+                            <div className="w-8 h-8 flex items-center justify-center shrink-0" style={{background:`${c.accent}12`,clipPath:'polygon(4px 0%,100% 0%,calc(100% - 4px) 100%,0% 100%)'}}>
+                              <FileText className="w-4 h-4" style={{color:c.accent}}/>
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-semibold truncate" style={{color:'var(--text-1)',fontFamily:'Rajdhani,sans-serif'}}>{doc.title}</p>
+                              <p className="text-xs" style={{color:'var(--text-3)',fontFamily:'JetBrains Mono,monospace'}}>{doc.pageCount}p · {formatFileSize(doc.fileSize)} · <Clock className="w-2.5 h-2.5 inline"/>30min</p>
+                            </div>
+                            <div className="opacity-0 group-hover:opacity-100 transition-opacity">
+                              <ArrowRight className="w-4 h-4" style={{color:c.accent}}/>
+                            </div>
+                          </motion.div>
+                        ))
+                      }
                     </div>
-                    <button
-                      onClick={() => openViewer(doc.id)}
-                      className="btn-primary text-sm px-4 py-2 opacity-0 group-hover:opacity-100 transition-opacity"
-                    >
-                      Lire <ArrowRight className="w-4 h-4" />
-                    </button>
-                    <button
-                      onClick={() => openViewer(doc.id)}
-                      className="btn-primary text-sm px-4 py-2 group-hover:opacity-0 opacity-100 absolute transition-opacity sm:static"
-                      style={{ position: 'static' }}
-                    >
-                      Lire <ArrowRight className="w-4 h-4" />
-                    </button>
-                  </motion.div>
-                ))}
-              </div>
-            )}
-
-            {/* Security note */}
-            <div className="mt-6 p-4 rounded-xl bg-amber-50 border border-amber-200 flex items-start gap-3">
-              <span className="text-amber-500 text-lg">🔒</span>
-              <div>
-                <p className="font-semibold text-amber-800 text-sm">Documents protégés</p>
-                <p className="text-amber-700 text-xs mt-0.5">
-                  Les documents s&apos;affichent uniquement dans le lecteur sécurisé.
-                  Le téléchargement n&apos;est pas disponible. Chaque session dure 30 minutes.
-                </p>
-              </div>
-            </div>
-          </div>
-
-        ) : (
-          /* Non acheté */
-          <div className="card overflow-hidden">
-            {/* Hero section */}
-            <div className="bg-navy-gradient p-8 relative overflow-hidden">
-              <div className="absolute inset-0 bg-hero-pattern opacity-30" />
-              <div className="relative z-10">
-                <div className="flex items-start justify-between mb-6">
-                  <div className="flex items-center gap-4">
-                    <div className="w-16 h-16 rounded-2xl bg-gold-DEFAULT/20 border border-gold-DEFAULT/30 flex items-center justify-center">
-                      <BookOpen className="w-8 h-8 text-gold-DEFAULT" />
+                    {/* Security note */}
+                    <div className="mt-4 p-3 flex items-start gap-2" style={{background:'rgba(255,184,0,0.05)',border:'1px solid rgba(255,184,0,0.15)'}}>
+                      <Zap className="w-3.5 h-3.5 shrink-0 mt-0.5" style={{color:'var(--gold)'}}/>
+                      <p className="text-xs" style={{color:'rgba(255,184,0,0.7)',fontFamily:'JetBrains Mono,monospace',lineHeight:1.6}}>Documents protégés. Viewer sécurisé. Session 30 min.</p>
+                    </div>
+                  </div>
+                ) : (
+                  /* Not owned: show buy */
+                  <div className="flex-1 flex flex-col justify-between">
+                    <div className="space-y-2 mb-5">
+                      {pack.features.slice(0,4).map((f,k)=>(
+                        <div key={k} className="flex items-start gap-2 text-sm">
+                          <div className="w-1.5 h-1.5 rounded-full mt-1.5 shrink-0" style={{background:c.accent}}/>
+                          <span style={{color:'var(--text-2)',fontFamily:'Rajdhani,sans-serif'}}>{f}</span>
+                        </div>
+                      ))}
                     </div>
                     <div>
-                      <h2 className="text-2xl font-display font-bold text-white">Pack Digital 360</h2>
-                      <p className="text-white/60 text-sm mt-1">Guide complet + Script marketing</p>
+                      <div className="text-xs mb-1" style={{color:'var(--text-3)',fontFamily:'JetBrains Mono,monospace',textDecoration:'line-through'}}>Valeur réelle : +100 000 FCFA</div>
+                      <div className="text-3xl font-black mb-4" style={{fontFamily:'Orbitron,monospace',background:`linear-gradient(135deg,${c.accent},white)`,WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent',backgroundClip:'text'}}>
+                        {formatCurrency(pack.price,pack.currency)}
+                      </div>
+                      <button onClick={()=>handleBuy(pack._id)} disabled={paying===pack._id}
+                        className="w-full flex items-center justify-center gap-2 py-3 text-sm font-bold tracking-widest uppercase transition-all duration-300 disabled:opacity-50"
+                        style={{fontFamily:'Orbitron,monospace',background:`linear-gradient(135deg,${c.accent},${c.accent}CC)`,color:'#020608',clipPath:'polygon(8px 0%,100% 0%,calc(100% - 8px) 100%,0% 100%)',boxShadow:`0 0 20px ${c.glow}`}}>
+                        {paying===pack._id ? <><div className="spinner"/>&nbsp;REDIRECTION...</> : <><CreditCard className="w-4 h-4"/> ACHETER CE PACK</>}
+                      </button>
                     </div>
                   </div>
-                  <div className="flex items-center gap-1.5 bg-white/10 rounded-full px-3 py-1.5">
-                    <Lock className="w-3.5 h-3.5 text-white/60" />
-                    <span className="text-white/60 text-xs">Non acheté</span>
-                  </div>
-                </div>
-
-                {/* Features preview */}
-                <div className="grid grid-cols-2 gap-2 mb-6">
-                  {[
-                    '55+ pages de contenu',
-                    '8 outils Google couverts',
-                    'Script marketing 3 versions',
-                    'Grille tarifaire FCFA',
-                  ].map((f, i) => (
-                    <div key={i} className="flex items-center gap-2 text-white/70 text-sm">
-                      <Star className="w-3 h-3 text-gold-DEFAULT fill-gold-DEFAULT shrink-0" />
-                      {f}
-                    </div>
-                  ))}
-                </div>
-
-                {/* Price + CTA */}
-                <div className="flex items-center gap-4">
-                  <div>
-                    <div className="text-white/40 text-xs line-through">Valeur réelle : +100 000 FCFA</div>
-                    <div className="text-gold-DEFAULT font-display font-bold text-3xl">{formatCurrency(25000)}</div>
-                  </div>
-                  <button
-                    onClick={handlePayment}
-                    disabled={paying}
-                    className="btn-gold text-base px-8 py-3.5 flex-1 sm:flex-none"
-                  >
-                    {paying ? (
-                      <><Loader2 className="w-5 h-5 animate-spin" /> Redirection...</>
-                    ) : (
-                      <><CreditCard className="w-5 h-5" /> Acheter maintenant</>
-                    )}
-                  </button>
-                </div>
+                )}
               </div>
-            </div>
+            </motion.div>
+          );
+        })}
+      </div>
 
-            {/* Payment methods */}
-            <div className="p-5 border-t border-gray-100">
-              <p className="text-gray-500 text-xs text-center">
-                Paiement 100% sécurisé via FedaPay ·
-                MTN Mobile Money · Moov Money · Carte bancaire ·
-                Accès immédiat après confirmation
-              </p>
-            </div>
-          </div>
-        )}
-      </motion.div>
-
-      {/* ── Help card ───────────────────────────────────────────────────── */}
-      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.3 }}>
-        <div className="card p-5 flex items-center gap-4">
-          <div className="text-2xl">💬</div>
+      {/* Help */}
+      <motion.div initial={{opacity:0}} animate={{opacity:1}} transition={{delay:.4}}>
+        <div className="p-5 flex items-center gap-4" style={{background:'var(--bg-card)',border:'1px solid var(--border-s)'}}>
+          <span className="text-2xl">💬</span>
           <div>
-            <p className="font-semibold text-navy-DEFAULT text-sm">Besoin d&apos;aide ?</p>
-            <p className="text-gray-500 text-xs mt-0.5">
-              Contactez-nous par email à{' '}
-              <a href="mailto:guidolokossouolympe@gmail.com" className="text-brand-blue hover:underline">
+            <p className="font-semibold text-sm" style={{color:'var(--text-1)',fontFamily:'Orbitron,monospace',fontSize:'11px',letterSpacing:'0.05em'}}>SUPPORT</p>
+            <p className="text-sm" style={{color:'var(--text-2)',fontFamily:'Rajdhani,sans-serif'}}>
+              Contactez-nous à{' '}
+              <a href="mailto:guidolokossouolympe@gmail.com" className="transition-colors" style={{color:'var(--cyan)'}}
+                onMouseEnter={e=>(e.currentTarget.style.color='var(--magenta)')} onMouseLeave={e=>(e.currentTarget.style.color='var(--cyan)')}>
                 guidolokossouolympe@gmail.com
               </a>
             </p>
