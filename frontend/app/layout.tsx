@@ -82,7 +82,7 @@ export default function ProtectedLayout({ children }: { children: React.ReactNod
         <div className="p-3" style={{borderTop:'1px solid rgba(255,255,255,0.04)'}}>
           <button onClick={()=>{logout();router.push('/');}}
             className="flex items-center gap-3 px-4 py-3 text-sm w-full transition-all duration-200 tracking-wider"
-            style={{fontFamily:'Orbitron,monospace',fontSize:'11px',color:'var(--text-3)'}}
+            style={{fontFamily:'Orbitron,monospace', fontSize:'11px', color:'var(--text-3)'}}
             onMouseEnter={e=>(e.currentTarget.style.color='var(--magenta)')}
             onMouseLeave={e=>(e.currentTarget.style.color='var(--text-3)')}>
             <LogOut className="w-4 h-4"/>DÉCONNEXION
