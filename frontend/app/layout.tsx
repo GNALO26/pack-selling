@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
-import { LayoutDashboard, LogOut, BookOpen, Shield, Menu, X, ChevronRight } from 'lucide-react';
+import { LayoutDashboard, LogOut, Shield, Menu, X } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
 import { cn } from '@/lib/utils';
 
@@ -30,11 +30,10 @@ export default function ProtectedLayout({ children }: { children: React.ReactNod
 
   return (
     <div className="min-h-screen flex" style={{background:'var(--bg-void)'}}>
-      {/* Sidebar */}
+      {/* Sidebar identique à avant, inchangée sauf le bouton logout plus bas */}
       <aside className={cn('fixed inset-y-0 left-0 z-50 w-60 flex flex-col transition-transform duration-300 lg:translate-x-0',
         open?'translate-x-0':'-translate-x-full lg:translate-x-0')}
         style={{background:'var(--bg-deep)',borderRight:'1px solid rgba(0,212,255,0.08)'}}>
-        {/* Logo */}
         <div className="p-5" style={{borderBottom:'1px solid rgba(0,212,255,0.08)'}}>
           <Link href="/" className="flex items-center gap-3">
             <div className="relative w-8 h-8"><Image src="/logo.png" alt="GUI-LOK DEV" fill className="object-contain"/></div>
@@ -44,7 +43,6 @@ export default function ProtectedLayout({ children }: { children: React.ReactNod
             </div>
           </Link>
         </div>
-        {/* User */}
         <div className="p-4" style={{borderBottom:'1px solid rgba(255,255,255,0.04)'}}>
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 flex items-center justify-center font-bold text-sm"
@@ -57,7 +55,6 @@ export default function ProtectedLayout({ children }: { children: React.ReactNod
             </div>
           </div>
         </div>
-        {/* Nav */}
         <nav className="flex-1 p-3 space-y-1">
           {navLinks.map(({href,label,icon:Icon})=>{
             const active = pathname === href || pathname.startsWith(href+'/');
@@ -78,10 +75,11 @@ export default function ProtectedLayout({ children }: { children: React.ReactNod
             );
           })}
         </nav>
-        {/* Logout */}
+        {/* Bouton Déconnexion corrigé */}
         <div className="p-3" style={{borderTop:'1px solid rgba(255,255,255,0.04)'}}>
           <button onClick={()=>{logout();router.push('/');}}
             className="flex items-center gap-3 px-4 py-3 text-sm w-full transition-all duration-200 tracking-wider"
+            style={{fontFamily:'Orbitron,monospace', fontSize:'11px', color:'var(--text-3)'}}
             onMouseEnter={e=>(e.currentTarget.style.color='var(--magenta)')}
             onMouseLeave={e=>(e.currentTarget.style.color='var(--text-3)')}>
             <LogOut className="w-4 h-4"/>DÉCONNEXION
@@ -89,10 +87,8 @@ export default function ProtectedLayout({ children }: { children: React.ReactNod
         </div>
       </aside>
 
-      {/* Mobile overlay */}
       {open && <div className="fixed inset-0 z-40 bg-black/70 lg:hidden" onClick={()=>setOpen(false)}/>}
 
-      {/* Main */}
       <div className="flex-1 lg:ml-60 flex flex-col min-h-screen">
         <header className="h-14 flex items-center px-4 sm:px-6 sticky top-0 z-30"
           style={{background:'var(--bg-deep)',borderBottom:'1px solid rgba(0,212,255,0.07)'}}>
