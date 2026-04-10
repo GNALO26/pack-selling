@@ -64,12 +64,33 @@ exports.register = async (req, res, next) => {
 
     // Envoyer email de vérification
     const verifUrl = `${process.env.FRONTEND_URL}/verify?token=${verifToken}`;
-    await sendEmail({
-      to: user.email,
-      subject: 'Vérifiez votre email — GUI-LOK DEV',
+    const emailResult = await sendEmail({
+      to:       user.email,
+      subject:  'Vérifiez votre email — GUI-LOK DEV',
       template: 'verifyEmail',
-      data: { firstName: user.firstName, verifUrl },
+      data:     { firstName: user.firstName, verifUrl },
     });
+
+    // Si l'email a échoué → activer le compte directement et connecter l'utilisateur
+    if (!emailResult?.success) {
+      console.warn(`[Register] Email échoué pour ${user.email} — activation automatique du compte`);
+      user.isEmailVerified = true;
+      user.emailVerificationToken   = undefined;
+      user.emailVerificationExpires = undefined;
+      await user.save({ validateBeforeSave: false });
+
+      const token = signToken(user._id);
+      return res.status(201).json({
+        message: 'Compte créé avec succès.',
+        token,
+        user: {
+          id: user._id, email: user.email,
+          firstName: user.firstName, lastName: user.lastName,
+          role: user.role, purchases: user.purchases || [],
+        },
+        autoLogin: true,
+      });
+    }
 
     res.status(201).json({
       message: 'Compte créé. Vérifiez votre email pour activer votre compte.',

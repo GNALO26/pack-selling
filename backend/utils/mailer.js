@@ -2,14 +2,20 @@ const nodemailer = require('nodemailer');
 
 // ── Transporter ───────────────────────────────────────────────────────────────
 const createTransporter = () => nodemailer.createTransport({
-  host:   process.env.SMTP_HOST,
+  host:   process.env.SMTP_HOST   || 'smtp-relay.brevo.com',
   port:   parseInt(process.env.SMTP_PORT || '587'),
-  secure: process.env.SMTP_PORT === '465',
+  secure: false, // Brevo utilise STARTTLS sur 587, pas SSL direct
   auth: {
     user: process.env.SMTP_USER,
     pass: process.env.SMTP_PASS,
   },
-  tls: { rejectUnauthorized: process.env.NODE_ENV === 'production' },
+  tls: {
+    rejectUnauthorized: false, // Évite les erreurs de certificat sur certains hébergeurs
+    ciphers: 'SSLv3',
+  },
+  connectionTimeout: 10000, // 10 secondes max
+  greetingTimeout:   10000,
+  socketTimeout:     15000,
 });
 
 // ── Templates HTML ────────────────────────────────────────────────────────────
@@ -169,17 +175,23 @@ const sendEmail = async ({ to, subject, template, data, html }) => {
     const transporter = createTransporter();
     const tpl = templates[template]?.(data) || { subject, html };
 
-    await transporter.sendMail({
-      from: `"Pack Digital 360" <${process.env.SMTP_FROM || process.env.SMTP_USER}>`,
+    const from = process.env.SMTP_FROM
+      ? process.env.SMTP_FROM
+      : `"GUI-LOK DEV" <${process.env.SMTP_USER}>`;
+
+    const info = await transporter.sendMail({
+      from,
       to,
       subject: tpl.subject || subject,
-      html: tpl.html || html,
+      html:    tpl.html    || html,
     });
 
-    console.log(`[Mailer] ✅ Email envoyé à ${to} — ${tpl.subject || subject}`);
+    console.log(`[Mailer] ✅ Email envoyé à ${to} — messageId: ${info.messageId}`);
+    return { success: true };
   } catch (err) {
     console.error(`[Mailer] ❌ Erreur envoi à ${to}:`, err.message);
-    // Ne pas planter l'app si l'email échoue
+    // Retourne l'erreur pour que le controller puisse réagir
+    return { success: false, error: err.message };
   }
 };
 
