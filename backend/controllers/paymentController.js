@@ -1,101 +1,112 @@
-// ✅ Import correct pour fedapay v1.x — déstructuration obligatoire
 const { FedaPay, Transaction: FedaTransaction } = require('fedapay');
 const Pack        = require('../models/Pack');
 const Transaction = require('../models/Transaction');
 
-// ── Init FedaPay ──────────────────────────────────────────────────────────────
-
+// Init FedaPay
 FedaPay.setApiKey(process.env.FEDAPAY_SECRET_KEY);
-FedaPay.setEnvironment(process.env.FEDAPAY_ENV || 'live');
-
-console.log(`[FedaPay] Mode : ${process.env.FEDAPAY_ENV || 'live'}`);
+FedaPay.setEnvironment(process.env.FEDAPAY_ENV || 'sandbox');
+console.log(`[FedaPay] Mode : ${process.env.FEDAPAY_ENV || 'sandbox'}`);
 
 /**
  * POST /api/payment/initiate
- * Crée une transaction FedaPay et retourne le checkout URL.
  */
 exports.initiatePayment = async (req, res, next) => {
   try {
     const { packId } = req.body;
     const user = req.user;
 
-    if (!packId) {
+    if (!packId)
       return res.status(400).json({ error: 'packId requis.' });
-    }
 
-    // ── Vérifier que le pack existe ───────────────────────────────────────────
     const pack = await Pack.findById(packId);
-    if (!pack || !pack.isActive) {
+    if (!pack || !pack.isActive)
       return res.status(404).json({ error: 'Pack introuvable ou indisponible.' });
+
+    if (user.hasPurchased(packId))
+      return res.status(409).json({ error: 'Vous avez déjà accès à ce pack.', alreadyPurchased: true });
+
+    // Construire l'objet customer — phone_number optionnel
+    const customer = {
+      firstname: user.firstName,
+      lastname:  user.lastName,
+      email:     user.email,
+    };
+
+    // N'ajouter phone_number que s'il est renseigné et valide
+    if (user.phone && user.phone.trim().length >= 8) {
+      // Nettoyer le numéro : garder uniquement les chiffres
+      const cleanPhone = user.phone.replace(/\D/g, '');
+      if (cleanPhone.length >= 8) {
+        customer.phone_number = {
+          number:  cleanPhone,
+          country: 'BJ',
+        };
+      }
     }
 
-    // ── Vérifier que l'utilisateur n'a pas déjà acheté ───────────────────────
-    if (user.hasPurchased(packId)) {
-      return res.status(409).json({
-        error: 'Vous avez déjà accès à ce pack.',
-        alreadyPurchased: true,
-      });
-    }
-
-    // ── Créer la transaction FedaPay ──────────────────────────────────────────
-    const transaction = await FedaTransaction.create({
+    // Créer la transaction FedaPay
+    const txData = {
       description: `Achat — ${pack.name}`,
       amount:      pack.price,
-      currency:    { iso: pack.currency },
-
-      // URL appelée par FedaPay après paiement (webhook backend)
+      currency:    { iso: pack.currency || 'XOF' },
       callback_url: `${process.env.BACKEND_URL}/api/webhook/fedapay`,
-
-      // URL de redirection navigateur après paiement (retour client)
-      redirect_url: `${process.env.FRONTEND_URL}/dashboard?transaction_id={id}&status={status}`,
-
-      customer: {
-        firstname: user.firstName,
-        lastname:  user.lastName,
-        email:     user.email,
-        phone_number: {
-          number:  user.phone || '',
-          country: 'BJ',
-        },
-      },
-
-      // Métadonnées custom — récupérées dans le webhook
+      customer,
+      // custom_metadata transmis dans le webhook
       custom_metadata: {
         userId: user._id.toString(),
         packId: pack._id.toString(),
       },
-    });
+    };
 
-    // ── Générer le token de paiement (checkout URL) ───────────────────────────
+    console.log('[Payment] Création transaction FedaPay:', JSON.stringify({
+      description: txData.description,
+      amount: txData.amount,
+      currency: txData.currency,
+      customer_email: txData.customer.email,
+    }));
+
+    const transaction = await FedaTransaction.create(txData);
+
+    // Générer le token de paiement
     const token = await transaction.generateToken();
 
-    // ── Sauvegarder la transaction en base (statut: pending) ─────────────────
+    // Sauvegarder en base
     await Transaction.create({
       userId:               user._id,
       packId:               pack._id,
       fedapayTransactionId: transaction.id.toString(),
       amount:               pack.price,
-      currency:             pack.currency,
+      currency:             pack.currency || 'XOF',
       status:               'pending',
       customerEmail:        user.email,
       customerName:         `${user.firstName} ${user.lastName}`,
       customerPhone:        user.phone || '',
     });
 
-    console.log(`[Payment] Transaction créée — ID: ${transaction.id} — User: ${user.email} — Pack: ${pack.name}`);
+    console.log(`[Payment] ✅ Transaction créée — ID: ${transaction.id} — User: ${user.email}`);
+
+    // Construire la redirect_url SANS placeholders FedaPay
+    // On redirige vers le dashboard et on vérifie le statut via l'API
+    const redirectUrl = `${process.env.FRONTEND_URL}/dashboard?payment=pending&txn=${transaction.id}`;
 
     res.json({
       checkoutUrl:   token.url,
       transactionId: transaction.id,
+      redirectUrl,
     });
 
   } catch (err) {
     console.error('[Payment] Erreur FedaPay:', err?.message || err);
+    console.error('[Payment] Status:', err?.response?.status);
+    console.error('[Payment] Data:', JSON.stringify(err?.response?.data || {}));
 
-    // Message lisible si clés API incorrectes
-    if (err?.message?.includes('Unauthorized')) {
+    if (err?.message?.includes('Unauthorized') || err?.response?.status === 401) {
+      return res.status(500).json({ error: 'Clés FedaPay invalides. Vérifiez FEDAPAY_SECRET_KEY.' });
+    }
+    if (err?.response?.status === 400) {
       return res.status(500).json({
-        error: 'Erreur de configuration FedaPay. Vérifiez vos clés API.',
+        error: 'Erreur FedaPay (400). Vérifiez les données envoyées.',
+        detail: err?.response?.data,
       });
     }
 
@@ -105,7 +116,6 @@ exports.initiatePayment = async (req, res, next) => {
 
 /**
  * GET /api/payment/status/:transactionId
- * Vérifie le statut d'une transaction depuis la base de données.
  */
 exports.checkStatus = async (req, res, next) => {
   try {
@@ -116,9 +126,8 @@ exports.checkStatus = async (req, res, next) => {
       userId: req.user._id,
     });
 
-    if (!txn) {
+    if (!txn)
       return res.status(404).json({ error: 'Transaction introuvable.' });
-    }
 
     res.json({
       status:      txn.status,
@@ -126,7 +135,6 @@ exports.checkStatus = async (req, res, next) => {
       currency:    txn.currency,
       confirmedAt: txn.confirmedAt,
     });
-
   } catch (err) {
     next(err);
   }
