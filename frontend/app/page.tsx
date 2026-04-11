@@ -159,7 +159,7 @@ function PackCard({ pack, index }: { pack: Pack; index: number }) {
         {/* Price + CTA */}
         <div>
           <div className="text-xs mb-1" style={{ color:'var(--text-3)', fontFamily:'JetBrains Mono,monospace', textDecoration:'line-through' }}>
-            Valeur réelle : +100 000 FCFA
+            Valeur réelle : +25 000 FCFA
           </div>
           <div className="text-3xl font-black mb-4" style={{
             fontFamily:'Orbitron,monospace',
