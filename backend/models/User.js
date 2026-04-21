@@ -1,114 +1,78 @@
-const mongoose = require('mongoose');
-const bcrypt   = require('bcryptjs');
+const mongoose  = require('mongoose');
+const bcrypt    = require('bcryptjs');
 const validator = require('validator');
 
+const purchaseSchema = new mongoose.Schema({
+  packId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref:  'Pack',
+    required: true,
+  },
+  purchasedAt:     { type: Date, default: Date.now },
+  amount:          { type: Number, default: 0 },
+  currency:        { type: String, default: 'XOF' },
+  grantedManually: { type: Boolean, default: false },
+}, { _id: false });
+
 const userSchema = new mongoose.Schema({
+  firstName: { type: String, required: true, trim: true },
+  lastName:  { type: String, required: true, trim: true },
   email: {
-    type: String,
-    required: [true, 'Email requis'],
+    type:      String,
+    required:  true,
     lowercase: true,
-    trim: true,
-    validate: [validator.isEmail, 'Email invalide'],
+    trim:      true,
+    validate:  [validator.isEmail, 'Email invalide'],
   },
   password: {
-    type: String,
-    required: [true, 'Mot de passe requis'],
-    minlength: [8, 'Minimum 8 caractères'],
-    select: false, // jamais retourné par défaut
+    type:     String,
+    required: true,
+    minlength: 8,
+    select:   false,
   },
-  firstName: {
-    type: String,
-    required: [true, 'Prénom requis'],
-    trim: true,
-    maxlength: [50, 'Prénom trop long'],
-  },
-  lastName: {
-    type: String,
-    required: [true, 'Nom requis'],
-    trim: true,
-    maxlength: [50, 'Nom trop long'],
-  },
-  phone: {
-    type: String,
-    trim: true,
-  },
-  role: {
-    type: String,
-    enum: ['client', 'admin'],
-    default: 'client',
-  },
-  isEmailVerified: {
-    type: Boolean,
-    default: false,
-  },
-  emailVerificationToken: {
-    type: String,
-    select: false,
-  },
-  emailVerificationExpires: {
-    type: Date,
-    select: false,
-  },
-  passwordResetToken: {
-    type: String,
-    select: false,
-  },
-  passwordResetExpires: {
-    type: Date,
-    select: false,
-  },
-  // Accès aux packs achetés
-  purchases: [{
-    packId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'Pack',
-    },
-    purchasedAt: { type: Date, default: Date.now },
-    paymentId: String,
-    transactionId: String,
-    amount: Number,
-    currency: { type: String, default: 'XOF' },
-    // Accès manuel donné par admin
-    grantedManually: { type: Boolean, default: false },
-    grantedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
-  }],
+  phone:  { type: String, trim: true },
+  role:   { type: String, enum: ['client', 'admin'], default: 'client' },
+
+  isEmailVerified:         { type: Boolean, default: false },
+  emailVerificationToken:  { type: String, select: false },
+  emailVerificationExpires:{ type: Date,   select: false },
+
+  passwordResetToken:      { type: String, select: false },
+  passwordResetExpires:    { type: Date,   select: false },
+
+  isActive:    { type: Boolean, default: true },
   lastLoginAt: Date,
-  loginCount: { type: Number, default: 0 },
-  isActive: { type: Boolean, default: true },
-}, {
-  timestamps: true,
-});
+  loginCount:  { type: Number, default: 0 },
 
-// ── Index ─────────────────────────────────────────────────────────────────────
-userSchema.index({ email: 1 });
-userSchema.index({ 'purchases.packId': 1 });
+  purchases: [purchaseSchema],
+}, { timestamps: true });
 
-// ── Hash password avant save ──────────────────────────────────────────────────
+// Index uniques
+userSchema.index({ email: 1 }, { unique: true });
+
+// Hash du mot de passe avant sauvegarde
 userSchema.pre('save', async function (next) {
   if (!this.isModified('password')) return next();
   this.password = await bcrypt.hash(this.password, 12);
   next();
 });
 
-// ── Comparer mot de passe ─────────────────────────────────────────────────────
-userSchema.methods.comparePassword = async function (candidate) {
-  return bcrypt.compare(candidate, this.password);
+// Comparer le mot de passe
+userSchema.methods.comparePassword = async function (candidatePassword) {
+  return bcrypt.compare(candidatePassword, this.password);
 };
 
-// ── Check accès à un pack ─────────────────────────────────────────────────────
+// Vérifier si l'utilisateur a acheté un pack — robuste sur les deux formats
 userSchema.methods.hasPurchased = function (packId) {
-  return this.purchases.some(p => p.packId.toString() === packId.toString());
-};
-
-// ── Masquer données sensibles en JSON ────────────────────────────────────────
-userSchema.methods.toJSON = function () {
-  const obj = this.toObject();
-  delete obj.password;
-  delete obj.emailVerificationToken;
-  delete obj.emailVerificationExpires;
-  delete obj.passwordResetToken;
-  delete obj.passwordResetExpires;
-  return obj;
+  if (!this.purchases || this.purchases.length === 0) return false;
+  const targetId = packId.toString();
+  return this.purchases.some(p => {
+    // packId peut être un ObjectId populé ou une string
+    const pid = p.packId?._id
+      ? p.packId._id.toString()
+      : p.packId?.toString();
+    return pid === targetId;
+  });
 };
 
 module.exports = mongoose.model('User', userSchema);
