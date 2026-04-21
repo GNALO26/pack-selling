@@ -1,63 +1,108 @@
-const path       = require('path');
-const fs         = require('fs');
+const path      = require('path');
+const fs        = require('fs');
 const { v4: uuidv4 } = require('uuid');
-const User       = require('../models/User');
-const Pack       = require('../models/Pack');
-const ViewToken  = require('../models/ViewToken');
+const Pack      = require('../models/Pack');
+const ViewToken = require('../models/ViewToken');
 
-// Répertoire des PDFs — JAMAIS exposé publiquement
-const PDF_DIR = path.resolve(process.env.PDF_DIR || path.join(__dirname, '..', 'private', 'documents'));
+const PDF_DIR = process.env.PDF_DIR || './private/documents';
 
 /**
- * POST /api/documents/request-token
- *
- * Génère un token d'accès temporaire pour visualiser un PDF.
- * L'utilisateur doit avoir acheté le pack.
- *
- * Retourne : { token, expiresAt }
+ * GET /api/documents/list/:packId
+ * Liste les documents d'un pack (sans exposer le filename)
  */
-exports.requestViewToken = async (req, res, next) => {
+exports.listDocuments = async (req, res, next) => {
   try {
-    const { packId, documentFilename } = req.body;
+    const { packId } = req.params;
     const user = req.user;
 
-    // Vérifier que l'utilisateur a acheté ce pack
+    // Vérifier que l'user a acheté ce pack
     if (!user.hasPurchased(packId)) {
-      return res.status(403).json({
-        error: 'Accès refusé. Achetez ce pack pour y accéder.',
-      });
+      return res.status(403).json({ error: 'Accès non autorisé à ce pack.' });
     }
 
-    // Vérifier que le pack existe et que le document est bien dans ce pack
     const pack = await Pack.findById(packId);
     if (!pack) return res.status(404).json({ error: 'Pack introuvable.' });
 
-    const docExists = pack.documents.some(d => d.filename === documentFilename);
-    if (!docExists) {
-      return res.status(403).json({ error: 'Document introuvable dans ce pack.' });
+    // Retourner les documents sans le filename
+    const documents = pack.documents.map(doc => ({
+      id:        doc._id.toString(), // on utilise _id MongoDB comme identifiant
+      title:     doc.title,
+      fileSize:  doc.fileSize,
+      pageCount: doc.pageCount,
+      order:     doc.order,
+    }));
+
+    // Trier par ordre
+    documents.sort((a, b) => (a.order || 0) - (b.order || 0));
+
+    res.json({ packName: pack.name, documents });
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * POST /api/documents/request-token
+ * Génère un token d'accès temporaire (30 min) pour un document.
+ * Body: { packId, docId }  — docId est le _id MongoDB du document dans le pack
+ */
+exports.requestToken = async (req, res, next) => {
+  try {
+    const { packId, docId } = req.body;
+    const user = req.user;
+
+    if (!packId || !docId) {
+      return res.status(400).json({ error: 'packId et docId sont requis.' });
     }
 
-    // Révoquer les anciens tokens non utilisés pour ce user/doc
+    // Vérifier l'accès au pack
+    if (!user.hasPurchased(packId)) {
+      return res.status(403).json({ error: 'Accès non autorisé à ce pack.' });
+    }
+
+    const pack = await Pack.findById(packId);
+    if (!pack) return res.status(404).json({ error: 'Pack introuvable.' });
+
+    // Trouver le document par son _id MongoDB
+    const doc = pack.documents.find(d => d._id.toString() === docId);
+    if (!doc) {
+      console.error(`[Documents] Document ${docId} introuvable dans pack ${packId}`);
+      console.error(`[Documents] Documents disponibles:`, pack.documents.map(d => ({ id: d._id.toString(), title: d.title, filename: d.filename })));
+      return res.status(404).json({ error: 'Document introuvable dans ce pack.' });
+    }
+
+    // Vérifier que le PDF existe sur le serveur
+    const pdfPath = path.resolve(PDF_DIR, doc.filename);
+    if (!fs.existsSync(pdfPath)) {
+      console.error(`[Documents] Fichier PDF introuvable sur disque: ${pdfPath}`);
+      return res.status(404).json({
+        error: 'Fichier PDF non disponible. Contactez le support.',
+        filename: doc.filename,
+      });
+    }
+
+    // Invalider les tokens précédents pour ce document
     await ViewToken.deleteMany({
-      userId: user._id,
-      documentFilename,
-      isUsed: false,
+      userId:           user._id,
+      documentFilename: doc.filename,
     });
 
-    // Créer le token — expire dans 30 minutes
-    const viewToken = await ViewToken.create({
-      token: uuidv4() + '-' + uuidv4() + '-' + Date.now(),
-      userId: user._id,
-      packId,
-      documentFilename,
-      createdFromIP: req.ip,
-      expiresAt: new Date(Date.now() + 30 * 60 * 1000),
+    // Créer un nouveau token
+    const token = `${uuidv4()}-${uuidv4()}`;
+    const expiresAt = new Date(Date.now() + 30 * 60 * 1000); // 30 minutes
+
+    await ViewToken.create({
+      token,
+      userId:           user._id,
+      packId:           pack._id,
+      documentFilename: doc.filename,
+      expiresAt,
+      createdFromIP:    req.ip,
     });
 
-    res.json({
-      token: viewToken.token,
-      expiresAt: viewToken.expiresAt,
-    });
+    console.log(`[Documents] Token créé — User: ${user.email} | Doc: ${doc.title} | Expire: ${expiresAt.toISOString()}`);
+
+    res.json({ token, expiresAt: expiresAt.toISOString() });
   } catch (err) {
     next(err);
   }
@@ -65,142 +110,61 @@ exports.requestViewToken = async (req, res, next) => {
 
 /**
  * GET /api/documents/view/:token
- *
- * Stream le PDF en réponse — avec les headers qui INTERDISENT le téléchargement.
- *
- * Sécurité :
- * - Vérifie le token
- * - Stream par chunks (pas d'envoi complet)
- * - Headers anti-download
- * - Pas de Content-Disposition: attachment
- * - Pas de cache navigateur
- * - Marque le token comme utilisé après 1 accès complet
+ * Stream le PDF via le token temporaire
  */
-exports.streamDocument = async (req, res, next) => {
-  const { token } = req.params;
-  let viewToken = null;
-
+exports.viewDocument = async (req, res, next) => {
   try {
-    // Charger le token
-    viewToken = await ViewToken.findOne({ token }).select('+isUsed +usedAt +accessCount');
+    const { token } = req.params;
+
+    // Vérifier le JWT de l'user (depuis Authorization header ou query param)
+    // Note: cette route est accessible avec le token de session ET le viewToken
+    const viewToken = await ViewToken.findOne({ token });
+
     if (!viewToken) {
+      return res.status(404).json({ error: 'Token invalide ou expiré.' });
+    }
+
+    // Vérifier l'expiration
+    if (new Date() > viewToken.expiresAt) {
+      await ViewToken.deleteOne({ _id: viewToken._id });
+      return res.status(401).json({ error: 'Session expirée. Retournez au tableau de bord.' });
+    }
+
+    // Vérifier que l'user est bien le propriétaire du token
+    const userId = req.user?._id?.toString() || '';
+    if (viewToken.userId.toString() !== userId) {
       return res.status(403).json({ error: 'Token invalide.' });
     }
 
-    // Valider : expiration + appartenance (par userId en query param signé)
-    if (new Date() > viewToken.expiresAt) {
-      await ViewToken.deleteOne({ _id: viewToken._id });
-      return res.status(403).json({ error: 'Session expirée. Retournez au tableau de bord.' });
+    const pdfPath = path.resolve(PDF_DIR, viewToken.documentFilename);
+
+    if (!fs.existsSync(pdfPath)) {
+      return res.status(404).json({ error: 'Fichier introuvable. Contactez le support.' });
     }
+
+    const stat = fs.statSync(pdfPath);
+
+    // Headers de sécurité — empêcher le téléchargement
+    res.setHeader('Content-Type',        'application/pdf');
+    res.setHeader('Content-Length',      stat.size);
+    res.setHeader('Content-Disposition', 'inline'); // affichage, pas téléchargement
+    res.setHeader('Cache-Control',       'no-store, no-cache, must-revalidate, private');
+    res.setHeader('Pragma',              'no-cache');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('X-Frame-Options',    'SAMEORIGIN');
 
     // Incrémenter le compteur d'accès
-    viewToken.accessCount += 1;
-    if (!viewToken.usedAt) viewToken.usedAt = new Date();
+    viewToken.accessCount = (viewToken.accessCount || 0) + 1;
+    viewToken.usedAt = new Date();
     await viewToken.save();
 
-    // Construire le chemin du fichier
-    const filename  = viewToken.documentFilename;
-    const safeFile  = path.basename(filename); // Empêche path traversal
-    const filePath  = path.join(PDF_DIR, safeFile);
-
-    if (!fs.existsSync(filePath)) {
-      console.error(`[Documents] Fichier manquant: ${filePath}`);
-      return res.status(500).json({ error: 'Fichier temporairement indisponible.' });
-    }
-
-    const stat = fs.statSync(filePath);
-    const fileSize = stat.size;
-
-    // ── Headers de sécurité anti-téléchargement ──────────────────────────────
-    res.set({
-      // AFFICHAGE dans le navigateur — jamais en téléchargement
-      'Content-Type': 'application/pdf',
-      'Content-Disposition': 'inline',        // inline = afficher, attachment = télécharger
-
-      // Taille pour la barre de progression du viewer
-      'Content-Length': fileSize,
-
-      // Interdire le cache — chaque accès doit être authentifié
-      'Cache-Control': 'no-store, no-cache, must-revalidate, private',
-      'Pragma': 'no-cache',
-      'Expires': '0',
-
-      // Sécurité CORS — seul le frontend autorisé peut lire
-      'Access-Control-Allow-Origin': process.env.FRONTEND_URL,
-      'Access-Control-Allow-Credentials': 'true',
-
-      // Empêcher l'embedding dans d'autres sites
-      'X-Frame-Options': 'SAMEORIGIN',
-      'Content-Security-Policy': "default-src 'none'",
-
-      // Désactiver la sauvegarde dans les DevTools (pas parfait mais ajoute friction)
-      'X-Content-Type-Options': 'nosniff',
+    // Stream le fichier
+    const fileStream = fs.createReadStream(pdfPath);
+    fileStream.on('error', (err) => {
+      console.error('[Documents] Erreur stream:', err.message);
     });
+    fileStream.pipe(res);
 
-    // Support range requests (pour navigation dans le PDF)
-    const rangeHeader = req.headers.range;
-    if (rangeHeader) {
-      const parts  = rangeHeader.replace(/bytes=/, '').split('-');
-      const start  = parseInt(parts[0], 10);
-      const end    = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
-      const chunkSize = end - start + 1;
-
-      res.status(206);
-      res.set({
-        'Content-Range': `bytes ${start}-${end}/${fileSize}`,
-        'Accept-Ranges': 'bytes',
-        'Content-Length': chunkSize,
-      });
-
-      const stream = fs.createReadStream(filePath, { start, end });
-      stream.pipe(res);
-    } else {
-      res.set('Accept-Ranges', 'bytes');
-      const stream = fs.createReadStream(filePath);
-      stream.pipe(res);
-    }
-
-    // Marquer comme "utilisé" une fois le stream terminé
-    res.on('finish', async () => {
-      if (!viewToken.isUsed) {
-        viewToken.isUsed = true;
-        await viewToken.save().catch(console.error);
-      }
-    });
-
-  } catch (err) {
-    next(err);
-  }
-};
-
-/**
- * GET /api/documents/list/:packId
- * Liste les documents accessibles pour un pack (si acheté).
- */
-exports.listDocuments = async (req, res, next) => {
-  try {
-    const { packId } = req.params;
-    const user = req.user;
-
-    if (!user.hasPurchased(packId)) {
-      return res.status(403).json({ error: 'Accès refusé.' });
-    }
-
-    const pack = await Pack.findById(packId).select('name documents');
-    if (!pack) return res.status(404).json({ error: 'Pack introuvable.' });
-
-    // Retourner les métadonnées SANS le filename réel
-    const docs = pack.documents
-      .sort((a, b) => a.order - b.order)
-      .map(d => ({
-        id: d._id,
-        title: d.title,
-        fileSize: d.fileSize,
-        pageCount: d.pageCount,
-        // filename n'est PAS retourné ici — récupéré côté serveur lors du requestViewToken
-      }));
-
-    res.json({ packName: pack.name, documents: docs });
   } catch (err) {
     next(err);
   }
