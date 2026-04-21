@@ -17,8 +17,13 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
 
   const refresh = useCallback(async () => {
-    try { const r = await authApi.getMe(); setUser(r.data.user); } catch{}
+    try { const r = await authApi.getMe(); setUser(r.data.user); } catch {}
   }, [setUser]);
+
+  const loadAllPacks = useCallback(async () => {
+    const r = await packsApi.getAll().catch(() => ({ data: { packs: [] } }));
+    setPacks(r.data.packs);
+  }, []);
 
   const loadDocs = useCallback(async (packId: string) => {
     try {
@@ -29,13 +34,11 @@ export default function DashboardPage() {
 
   useEffect(() => {
     const init = async () => {
-      await refresh();
-      const r = await packsApi.getAll().catch(() => ({ data: { packs: [] } }));
-      setPacks(r.data.packs);
+      await Promise.all([refresh(), loadAllPacks()]);
       setLoading(false);
     };
     init();
-  }, [refresh]);
+  }, [refresh, loadAllPacks]);
 
   useEffect(() => {
     if (!user || !packs.length) return;
@@ -48,18 +51,62 @@ export default function DashboardPage() {
     });
   }, [user, packs, loadDocs]);
 
+  // Gérer le retour FedaPay → vérifier le statut du paiement
   useEffect(() => {
-    const p = new URLSearchParams(window.location.search);
-    const txId = p.get('transaction_id'), status = p.get('status');
-    if (txId && status === 'approved') {
+    const params    = new URLSearchParams(window.location.search);
+    const txnId     = params.get('transaction_id') || params.get('txn');
+    const status    = params.get('status');
+
+    if (!txnId && !status) return;
+
+    // Nettoyer l'URL immédiatement
+    window.history.replaceState({}, '', '/dashboard');
+
+    if (status === 'approved') {
       toast.success('PAIEMENT CONFIRMÉ — Accès activé !');
-      window.history.replaceState({}, '', '/dashboard');
-      setTimeout(() => { refresh(); }, 3000);
-    } else if (txId && status === 'declined') {
-      toast.error('Paiement refusé. Réessayez.');
-      window.history.replaceState({}, '', '/dashboard');
+      // Attendre que le webhook traite puis rafraîchir
+      setTimeout(() => refresh(), 2000);
+      setTimeout(() => refresh(), 5000);
+      return;
     }
-  }, [refresh]);
+
+    if (status === 'declined' || status === 'cancelled') {
+      toast.error('Paiement refusé ou annulé.');
+      return;
+    }
+
+    // Statut inconnu ou "pending" → vérifier via API toutes les 3s
+    if (txnId) {
+      toast('Vérification du paiement...', { icon: '⏳', duration: 4000 });
+      let attempts = 0;
+      const maxAttempts = 15; // 45 secondes max
+
+      const interval = setInterval(async () => {
+        attempts++;
+        try {
+          const r = await paymentApi.checkStatus(txnId);
+          if (r.data.status === 'approved') {
+            clearInterval(interval);
+            toast.success('PAIEMENT CONFIRMÉ — Accès activé !');
+            await refresh();
+            await loadAllPacks();
+          } else if (r.data.status === 'declined' || r.data.status === 'cancelled') {
+            clearInterval(interval);
+            toast.error('Paiement refusé.');
+          } else if (attempts >= maxAttempts) {
+            clearInterval(interval);
+            // Rafraîchir quand même — le webhook a peut-être déjà traité
+            await refresh();
+            toast('Si vous avez payé, votre accès sera activé sous peu. Actualisez la page.', {
+              icon: 'ℹ️', duration: 8000,
+            });
+          }
+        } catch { /* silent */ }
+      }, 3000);
+
+      return () => clearInterval(interval);
+    }
+  }, [refresh, loadAllPacks]);
 
   const hasPurchased = (packId: string) => user?.purchases?.some(p => {
     const id = typeof p.packId === 'string' ? p.packId : (p.packId as any)?._id;
@@ -98,13 +145,11 @@ export default function DashboardPage() {
 
   return (
     <div className="max-w-5xl mx-auto space-y-8">
-      {/* Header */}
       <motion.div initial={{opacity:0,y:16}} animate={{opacity:1,y:0}} className="page-header">
         <h1>MES PACKS</h1>
         <p>Bienvenue, {user?.firstName}. Gérez vos accès et découvrez nos guides.</p>
       </motion.div>
 
-      {/* Packs grid */}
       <div className="grid md:grid-cols-2 gap-6">
         {packs.map((pack, i) => {
           const c = COLORS[i % COLORS.length];
@@ -115,19 +160,14 @@ export default function DashboardPage() {
           return (
             <motion.div key={pack._id} initial={{opacity:0,y:24}} animate={{opacity:1,y:0}} transition={{delay:i*.1}}
               className="card flex flex-col" style={{ border:`1px solid ${owned ? c.border : 'var(--border-s)'}`, transition:'border-color .3s' }}>
-              <div style={{ height:'1px', background:`linear-gradient(90deg,transparent,${owned?c.accent:'rgba(255,255,255,0.1)'},transparent)` }}/>
+              <div style={{ height:'1px', background:`linear-gradient(90deg,transparent,${owned?c.accent:'rgba(255,255,255,0.08)'},transparent)` }}/>
 
               <div className="p-6 flex flex-col flex-1">
-                {/* Header pack */}
                 <div className="flex items-start justify-between mb-4">
                   <div>
                     <div className={`badge ${c.badge} mb-2 inline-block`}>Pack #{i+1}</div>
-                    <h2 className="text-base font-bold" style={{ fontFamily:'Orbitron,monospace', color:c.accent }}>
-                      {pack.name}
-                    </h2>
-                    <p className="text-xs mt-1" style={{ color:'var(--text-2)', fontFamily:'Rajdhani,sans-serif' }}>
-                      {pack.tagline}
-                    </p>
+                    <h2 className="text-base font-bold" style={{ fontFamily:'Orbitron,monospace', color:c.accent }}>{pack.name}</h2>
+                    <p className="text-xs mt-1" style={{ color:'var(--text-2)', fontFamily:'Rajdhani,sans-serif' }}>{pack.tagline}</p>
                   </div>
                   <div className="flex items-center gap-1.5 px-2.5 py-1.5 ml-3 shrink-0"
                     style={{ background: owned?'rgba(0,255,136,0.1)':'rgba(255,255,255,0.04)', border:`1px solid ${owned?'rgba(0,255,136,0.25)':'rgba(255,255,255,0.08)'}`, clipPath:'polygon(4px 0%,100% 0%,calc(100% - 4px) 100%,0% 100%)' }}>
@@ -138,7 +178,6 @@ export default function DashboardPage() {
                   </div>
                 </div>
 
-                {/* Owned: show docs */}
                 {owned ? (
                   <div className="flex-1">
                     {purchase && (
@@ -153,12 +192,6 @@ export default function DashboardPage() {
                             <div style={{color:c.accent,fontFamily:'JetBrains Mono,monospace',fontWeight:700}}>{formatCurrency(purchase.amount,purchase.currency)}</div>
                           </div>
                         )}
-                        {purchase.grantedManually && (
-                          <div>
-                            <div style={{color:'var(--text-3)',fontFamily:'JetBrains Mono,monospace'}}>Type</div>
-                            <div style={{color:'var(--gold)',fontFamily:'JetBrains Mono,monospace'}}>Offert 🎁</div>
-                          </div>
-                        )}
                       </div>
                     )}
                     <div className="space-y-2">
@@ -168,7 +201,7 @@ export default function DashboardPage() {
                           <motion.div key={doc.id} initial={{opacity:0,x:-12}} animate={{opacity:1,x:0}} transition={{delay:j*.08}}
                             className="flex items-center gap-3 p-3 cursor-pointer group transition-all duration-200"
                             style={{ background:'rgba(255,255,255,0.03)', border:'1px solid var(--border-s)' }}
-                            onMouseEnter={e=>{ e.currentTarget.style.borderColor=c.border; e.currentTarget.style.background=`${c.glow}`; }}
+                            onMouseEnter={e=>{ e.currentTarget.style.borderColor=c.border; e.currentTarget.style.background=c.glow; }}
                             onMouseLeave={e=>{ e.currentTarget.style.borderColor='var(--border-s)'; e.currentTarget.style.background='rgba(255,255,255,0.03)'; }}
                             onClick={()=>router.push(`/viewer?packId=${pack._id}&docId=${doc.id}`)}>
                             <div className="w-8 h-8 flex items-center justify-center shrink-0" style={{background:`${c.accent}12`,clipPath:'polygon(4px 0%,100% 0%,calc(100% - 4px) 100%,0% 100%)'}}>
@@ -185,14 +218,12 @@ export default function DashboardPage() {
                         ))
                       }
                     </div>
-                    {/* Security note */}
                     <div className="mt-4 p-3 flex items-start gap-2" style={{background:'rgba(255,184,0,0.05)',border:'1px solid rgba(255,184,0,0.15)'}}>
                       <Zap className="w-3.5 h-3.5 shrink-0 mt-0.5" style={{color:'var(--gold)'}}/>
-                      <p className="text-xs" style={{color:'rgba(255,184,0,0.7)',fontFamily:'JetBrains Mono,monospace',lineHeight:1.6}}>Documents protégés. Viewer sécurisé. Session 30 min.</p>
+                      <p className="text-xs" style={{color:'rgba(255,184,0,0.7)',fontFamily:'JetBrains Mono,monospace',lineHeight:1.6}}>Documents protégés · Viewer sécurisé · Session 30 min</p>
                     </div>
                   </div>
                 ) : (
-                  /* Not owned: show buy */
                   <div className="flex-1 flex flex-col justify-between">
                     <div className="space-y-2 mb-5">
                       {pack.features.slice(0,4).map((f,k)=>(
@@ -221,7 +252,6 @@ export default function DashboardPage() {
         })}
       </div>
 
-      {/* Help */}
       <motion.div initial={{opacity:0}} animate={{opacity:1}} transition={{delay:.4}}>
         <div className="p-5 flex items-center gap-4" style={{background:'var(--bg-card)',border:'1px solid var(--border-s)'}}>
           <span className="text-2xl">💬</span>
@@ -229,10 +259,7 @@ export default function DashboardPage() {
             <p className="font-semibold text-sm" style={{color:'var(--text-1)',fontFamily:'Orbitron,monospace',fontSize:'11px',letterSpacing:'0.05em'}}>SUPPORT</p>
             <p className="text-sm" style={{color:'var(--text-2)',fontFamily:'Rajdhani,sans-serif'}}>
               Contactez-nous à{' '}
-              <a href="mailto:guidolokossouolympe@gmail.com" className="transition-colors" style={{color:'var(--cyan)'}}
-                onMouseEnter={e=>(e.currentTarget.style.color='var(--magenta)')} onMouseLeave={e=>(e.currentTarget.style.color='var(--cyan)')}>
-                guidolokossouolympe@gmail.com
-              </a>
+              <a href="mailto:guidolokossouolympe@gmail.com" style={{color:'var(--cyan)'}}>guidolokossouolympe@gmail.com</a>
             </p>
           </div>
         </div>
