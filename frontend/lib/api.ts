@@ -54,9 +54,16 @@ export const paymentApi = {
 export const documentsApi = {
   list: (packId: string) =>
     api.get<{ packName: string; documents: Document[] }>(`/documents/list/${packId}`),
-  requestToken: (packId: string, documentFilename: string) =>
-    api.post<{ token: string; expiresAt: string }>('/documents/request-token', { packId, documentFilename }),
-  getStreamUrl: (token: string) => `${API_URL}/api/documents/view/${token}`,
+
+  // docId = _id MongoDB du document dans le pack (retourné par list())
+  requestToken: (packId: string, docId: string) =>
+    api.post<{ token: string; expiresAt: string }>('/documents/request-token', {
+      packId,
+      docId,
+    }),
+
+  getStreamUrl: (token: string) =>
+    `${API_URL}/api/documents/view/${token}`,
 };
 
 export const packsApi = {
@@ -75,6 +82,7 @@ export const adminApi = {
   toggleUserStatus: (userId: string) => api.patch(`/admin/users/${userId}/toggle`),
 };
 
+// ── Types ─────────────────────────────────────────────────────────────────────
 export interface User {
   id: string; _id: string;
   firstName: string; lastName: string; email: string; phone?: string;
@@ -88,10 +96,9 @@ export interface Purchase {
   grantedManually?: boolean;
 }
 export interface PackInfo { _id: string; name: string; slug: string; }
-export interface Document { id: string; title: string; fileSize: number; pageCount: number; }
+export interface Document { id: string; title: string; fileSize: number; pageCount: number; order?: number; }
 export interface Pack {
   _id: string; slug: string; name: string; tagline: string; description: string;
   price: number; currency: string; features: string[];
   documents: Document[]; isActive: boolean; salesCount?: number;
-  coverColor?: string;
 }
