@@ -3,16 +3,12 @@ const router  = express.Router();
 const ctrl    = require('../controllers/documentController');
 const { protect } = require('../middleware/auth');
 
-// Toutes les routes documents nécessitent une authentification
-router.use(protect);
+// Routes protégées par JWT
+router.get('/list/:packId',   protect, ctrl.listDocuments);
+router.post('/request-token', protect, ctrl.requestToken);
 
-// Liste les documents d'un pack (sans exposer le filename)
-router.get('/list/:packId',   ctrl.listDocuments);
-
-// Génère un token d'accès temporaire
-router.post('/request-token', ctrl.requestToken);
-
-// Stream le PDF via le token
-router.get('/view/:token',    ctrl.viewDocument);
+// Route de streaming — auth via ViewToken uniquement (pas de JWT obligatoire)
+// car PDF.js ne peut pas injecter de header Authorization facilement
+router.get('/view/:token', ctrl.viewDocument);
 
 module.exports = router;
